@@ -5,7 +5,7 @@ const db = require('./db');
 const fs = require('fs');
 
 const app = express();
-const PORT = 3001;
+const PORT = process.env.PORT || 3001;
 const sessionsFile = 'sessions.json';
 
 app.use(cors());
@@ -139,4 +139,6 @@ app.get('/api/workTypes', requireAuth, (req, res) => res.json(db.getWorkTypes())
 app.post('/api/workTypes', requireAuth, (req, res) => { const r = db.addWorkType(req.body.name); r.success ? res.json(r) : res.status(400).json(r); });
 app.delete('/api/workTypes/:name', requireAuth, (req, res) => res.json(db.removeWorkType(req.params.name)));
 
-app.listen(PORT, () => console.log(`Server running on http://localhost:${PORT}`));
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`Server running on http://0.0.0.0:${PORT}`);
+});
