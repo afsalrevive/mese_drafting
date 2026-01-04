@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { User, UserRole, Project, GroupAssignment, MemberAssignment, Team, AppState, DashboardStats } from './types';
 
-const API_BASE = 'http://localhost:3001/api';
+const API_BASE = "/api";
 
 export const useStore = () => {
   const [state, setState] = useState<AppState>({
