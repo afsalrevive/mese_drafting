@@ -10,8 +10,8 @@ export interface User {
   name: string;
   username: string;
   password?: string;
-  email?: string;       // New field
-  avatar?: string;      // New field (Base64)
+  email?: string;
+  avatar?: string;
   roles: UserRole[];
   teamId?: number | null;
   isApproved: boolean;
@@ -25,10 +25,22 @@ export interface Team {
   leadIds: number[];
 }
 
+// --- HYBRID STRUCTURE ---
+export interface ScopePart {
+  name: string;
+  workTypes: string[];
+}
+
+export interface ScopeItem {
+  division: string;
+  parts: ScopePart[];
+}
+
 export interface Project {
   id: number;
   name: string;
   date: string;
+  // Projects use Flat Lists
   divisions: string[];
   partNos: string[];
   workTypes: string[]; 
@@ -42,14 +54,12 @@ export interface GroupAssignment {
   id: number;
   projectId: number;
   teamId: number;
-  workTypes: string[]; 
-  divisions: string[];
-  partNos: string[];
+  // Assignments use Hierarchy
+  scope: ScopeItem[]; 
   fileSize: string;
   assignedTime: string;
   eta: string;
   rating?: number;            
-  // FIX: Added 'PENDING_ACK' to the allowed statuses below
   status: 'PENDING' | 'IN_PROGRESS' | 'COMPLETED' | 'REJECTED' | 'REJECTION_REQ' | 'PENDING_ACK';
   remarks?: string;
   completionTime?: string;
@@ -60,19 +70,18 @@ export interface MemberAssignment {
   id: number;
   groupAssignmentId: number;
   memberId: number;
-  workTypes: string[]; 
-  divisions: string[]; 
-  partNos: string[];   
+  scope: ScopeItem[];
   assignedTime: string;
   eta: string;
   completionTime?: string | null;
-  rating?: number;            
-  status: 'IN_PROGRESS' | 'PENDING_ACK' | 'COMPLETED' | 'REJECTED' | 'REJECTION_REQ'; 
+  rating?: number;
+  status: 'IN_PROGRESS' | 'PENDING_ACK' | 'COMPLETED' | 'REJECTED' | 'REJECTION_REQ';
   remarks?: string;
   reworkFromId?: number;
   bonusAwarded?: number;
   blackmarksAwarded?: number;
-  rejectionReason?: string;   
+  rejectionReason?: string;
+  screenshot?: string; 
 }
 
 export interface DashboardStats {
@@ -83,6 +92,13 @@ export interface DashboardStats {
   teamProductivity?: { name: string; value: number }[];
   personalPending?: number;
   personalCompleted?: number;
+  activeProjectsCount?: number; 
+  scoreData?: { bonusPoints: number; blackmarks: number };
+  pendingTasks?: number;
+  teamAvgTime?: { name: string; value: number }[];
+  topMembers?: { name: string; netScore: number }[];
+  memberProductivity?: { name: string; completed: number }[];
+  memberAvgTime?: { name: string; value: number }[];
 }
 
 export interface AppState {
@@ -94,4 +110,8 @@ export interface AppState {
   currentUser: User | null;
   workTypes: string[];
   stats: DashboardStats | null;
+  config: any;
+  chatMessages: any[]; 
+  forumThreads: any[]; 
+  notifications: any[];
 }

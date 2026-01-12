@@ -4,6 +4,7 @@ import { UserRole } from '../types';
 interface AuthProps { store: any; }
 
 const Auth: React.FC<AuthProps> = ({ store }) => {
+  const allowSignup = store.state.config.ALLOW_SIGNUP !== 0;
   const [isLogin, setIsLogin] = useState(true);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -69,34 +70,87 @@ const Auth: React.FC<AuthProps> = ({ store }) => {
         <form onSubmit={handleSubmit} className="space-y-4">
           {!isLogin && (
             <>
-                <input type="text" placeholder="Full Name" required className="w-full px-4 py-2 border rounded-lg" value={name} onChange={(e) => setName(e.target.value)} />
-                <input type="email" placeholder="Email (Optional)" className="w-full px-4 py-2 border rounded-lg" value={email} onChange={(e) => setEmail(e.target.value)} />
+                <div>
+                    <label className="block text-sm font-bold text-slate-700 mb-1 ml-1">Full Name</label>
+                    <input 
+                        type="text" 
+                        placeholder="e.g. John Doe" 
+                        required 
+                        className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none transition-all" 
+                        value={name} 
+                        onChange={(e) => setName(e.target.value)} 
+                    />
+                </div>
+                <div>
+                    <label className="block text-sm font-bold text-slate-700 mb-1 ml-1">Email <span className="font-normal text-slate-400">(Optional)</span></label>
+                    <input 
+                        type="email" 
+                        placeholder="john@example.com" 
+                        className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none transition-all" 
+                        value={email} 
+                        onChange={(e) => setEmail(e.target.value)} 
+                    />
+                </div>
             </>
           )}
-          <input type="text" placeholder="Username" required className="w-full px-4 py-2 border rounded-lg" value={username} onChange={(e) => setUsername(e.target.value)} />
-          <input type="password" placeholder="Password" required className="w-full px-4 py-2 border rounded-lg" value={password} onChange={(e) => setPassword(e.target.value)} />
+
+          <div>
+            <label className="block text-sm font-bold text-slate-700 mb-1 ml-1">Username</label>
+            <input 
+                type="text" 
+                placeholder="Enter username" 
+                required 
+                className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none transition-all" 
+                value={username} 
+                onChange={(e) => setUsername(e.target.value)} 
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-bold text-slate-700 mb-1 ml-1">Password</label>
+            <input 
+                type="password" 
+                placeholder="••••••••" 
+                required 
+                className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none transition-all" 
+                value={password} 
+                onChange={(e) => setPassword(e.target.value)} 
+            />
+          </div>
           
           {!isLogin && (
-            <div className="space-y-3">
-              <p className="text-xs font-bold text-slate-500 uppercase">Select Roles</p>
+            <div className="space-y-3 pt-2">
+              <label className="block text-sm font-bold text-slate-700 ml-1">Select Roles</label>
               <div className="flex flex-wrap gap-2">
                 {[UserRole.PROJECT_MANAGER, UserRole.TEAM_LEAD, UserRole.MEMBER].map(role => (
                   <button type="button" key={role} onClick={() => toggleRole(role)} className={`px-3 py-1 text-[10px] font-bold rounded border uppercase ${roles.includes(role)?'bg-indigo-600 text-white':'bg-white text-slate-500'}`}>{role.replace('_',' ')}</button>
                 ))}
               </div>
-              <div className="flex gap-2 items-center bg-slate-50 p-3 rounded-lg">
+              <div className="flex gap-2 items-center bg-slate-50 p-3 rounded-lg border border-slate-100 mt-4">
                   <span className="text-sm font-bold text-slate-700 select-none">Solve: {captcha.q} = </span>
-                  <input type="number" required className="w-20 p-1 border rounded" value={captchaInput} onChange={e=>setCaptchaInput(e.target.value)} />
+                  <input type="number" required className="w-20 p-1 border rounded focus:ring-2 focus:ring-indigo-500 outline-none" value={captchaInput} onChange={e=>setCaptchaInput(e.target.value)} />
               </div>
             </div>
           )}
 
-          <button type="submit" className="w-full bg-indigo-600 text-white py-2.5 rounded-lg font-bold shadow-lg hover:bg-indigo-700">{isLogin ? 'Sign In' : 'Sign Up'}</button>
+          <div className="pt-2">
+            <button type="submit" className="w-full bg-indigo-600 text-white py-2.5 rounded-lg font-bold shadow-lg hover:bg-indigo-700 transition-colors">{isLogin ? 'Sign In' : 'Sign Up'}</button>
+          </div>
         </form>
 
-        <div className="mt-6 text-center">
-          <button onClick={() => { setIsLogin(!isLogin); setError(''); setSuccess(''); }} className="text-indigo-600 hover:text-indigo-700 text-sm font-medium">{isLogin ? "Join now" : 'Sign in'}</button>
-        </div>
+        {/* 2. Conditionally Render "Join now" */}
+        {allowSignup && (
+            <div className="mt-6 text-center">
+            <button onClick={() => { setIsLogin(!isLogin); setError(''); setSuccess(''); }} className="text-indigo-600 hover:text-indigo-700 text-sm font-medium">{isLogin ? "Join now" : 'Sign in'}</button>
+            </div>
+        )}
+        
+        {!allowSignup && !isLogin && (
+             <div className="mt-6 text-center">
+                <button onClick={() => setIsLogin(true)} className="text-indigo-600 hover:text-indigo-700 text-sm font-medium">Back to Sign in</button>
+             </div>
+        )}
+
       </div>
     </div>
   );

@@ -3,7 +3,6 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  
   "scripts": {
     "dev": "vite --host",
     "build": "tsc && vite build",
@@ -11,11 +10,16 @@
     "backend": "npm run dev --prefix backend",
     "dev-full": "concurrently -n \"FRONTEND,BACKEND\" -c \"cyan,green\" \"npm run dev\" \"npm run backend\""
   },
-
   "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "jspdf": "^4.0.0",
+    "jspdf-autotable": "^5.0.7",
     "lucide-react": "^0.400.0",
+    "multer": "^2.0.2",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "react-photo-view": "^1.2.7",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@types/node": "^25.0.3",

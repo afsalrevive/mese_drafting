@@ -22,3 +22,10 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# System Files
+**/database.db
+**/sessions.json
+
+#Folder
+uploads/

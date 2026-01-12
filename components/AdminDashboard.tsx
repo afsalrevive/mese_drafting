@@ -1,24 +1,36 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { UserRole, Team, User } from '../types';
 
 interface AdminDashboardProps { 
     store: any;
-    currentView: 'home' | 'projects' | 'reports'; // Received from App
+    currentView: 'home' | 'projects' | 'reports'; 
 }
 
 const AdminDashboard: React.FC<AdminDashboardProps> = ({ store, currentView }) => {
-  const { state, approveUser, createTeam, assignUserToTeam, addWorkType, removeWorkType, updateUser, deleteUser } = store;
+  const { state, approveUser, createTeam, assignUserToTeam, addWorkType, removeWorkType, updateUser, deleteUser, updateConfig } = store;
   
-  // Mapped internal tabs for the "Projects" (Management) view
   const [activeTab, setActiveTab] = useState<'staff' | 'teams' | 'config'>('staff');
   
-  // Forms & State
   const [newTeamName, setNewTeamName] = useState('');
   const [newWorkType, setNewWorkType] = useState('');
   const [editingTeam, setEditingTeam] = useState<Team | null>(null);
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [showAddUserModal, setShowAddUserModal] = useState(false);
   const [approvalRoles, setApprovalRoles] = useState<Record<number, UserRole[]>>({});
+  
+  // SCORING CONFIG STATE
+  const [scoring, setScoring] = useState({
+      BONUS_ON_TIME: 3, BONUS_STAR_3: 1, BONUS_STAR_4: 2, BONUS_STAR_5: 3,
+      BM_DELAY_PER_HR: 1, BM_REWORK: 5, ALLOW_TIME_EDIT: 0, ALLOW_SIGNUP: 1
+  });
+  const [configMsg, setConfigMsg] = useState('');
+
+  // Sync state with store config when it loads
+  useEffect(() => {
+     if (state.config && Object.keys(state.config).length > 0) {
+         setScoring(prev => ({ ...prev, ...state.config }));
+     }
+  }, [state.config]);
 
   // Filters
   const pendingUsers = state.users.filter((u: User) => !u.isApproved);
@@ -28,7 +40,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ store, currentView }) =
   const unallocatedLeads = state.users.filter((u: User) => !u.teamId && u.roles.includes(UserRole.TEAM_LEAD) && u.isApproved && !u.roles.includes(UserRole.ADMIN));
   const unallocatedMembers = state.users.filter((u: User) => !u.teamId && u.roles.includes(UserRole.MEMBER) && u.isApproved && !u.roles.includes(UserRole.ADMIN));
 
-  // Handlers (Simplified)
+  // Handlers
   const handleCreateTeam = (e: React.FormEvent) => { e.preventDefault(); if (newTeamName.trim()) { createTeam(newTeamName); setNewTeamName(''); } };
   const handleAddWorkType = (e: React.FormEvent) => { e.preventDefault(); if (newWorkType.trim()) { addWorkType(newWorkType.trim()); setNewWorkType(''); } };
   const handleApprove = (user: User) => { const finalRoles = approvalRoles[user.id] || user.roles; approveUser(user.id, finalRoles); };
@@ -37,8 +49,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ store, currentView }) =
   const toggleEditUserRole = (role: UserRole) => { if (!editingUser) return; const updated = editingUser.roles.includes(role) ? editingUser.roles.filter(r => r !== role) : [...editingUser.roles, role]; setEditingUser({ ...editingUser, roles: updated }); };
   const addToTeam = (userId: number) => { if (editingTeam) assignUserToTeam(userId, editingTeam.id); };
   const removeFromTeam = (userId: number) => { assignUserToTeam(userId, null); };
+  
+  const handleSaveConfig = async () => {
+      const res = await updateConfig(scoring);
+      if (res.success) { setConfigMsg('Settings Saved!'); setTimeout(() => setConfigMsg(''), 2000); }
+  };
 
-  // Note: Admin might not have explicit Stats/Reports yet, defaulting to Management view
   if (currentView === 'home' || currentView === 'reports') {
       return (
           <div className="flex flex-col items-center justify-center h-96 text-slate-400">
@@ -64,7 +80,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ store, currentView }) =
         </div>
       </div>
 
-      {/* STAFF TAB */}
+      {/* STAFF TAB (Content omitted for brevity - same as before) */}
       {activeTab === 'staff' && (
         <div className="grid lg:grid-cols-3 gap-6">
           <div className="lg:col-span-1 space-y-6">
@@ -101,7 +117,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ store, currentView }) =
         </div>
       )}
 
-      {/* TEAMS TAB */}
+      {/* TEAMS TAB (Content omitted for brevity - same as before) */}
       {activeTab === 'teams' && (
         <div className="space-y-6">
           <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8 flex flex-col md:flex-row items-center justify-between gap-6">
@@ -114,21 +130,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ store, currentView }) =
               <button className="bg-violet-600 text-white px-8 py-3 rounded-xl font-bold text-sm shadow-lg shadow-violet-100 hover:bg-violet-700">Create Team</button>
             </form>
           </div>
-
           <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-            <div className="bg-slate-50 px-6 py-4 border-b border-slate-200">
-              <h2 className="font-bold text-slate-800">Existing Teams</h2>
-            </div>
+            <div className="bg-slate-50 px-6 py-4 border-b border-slate-200"><h2 className="font-bold text-slate-800">Existing Teams</h2></div>
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs">
-                <thead className="bg-slate-50 text-slate-400 uppercase font-black border-b tracking-widest">
-                  <tr>
-                    <th className="px-6 py-4">Team Name</th>
-                    <th className="px-6 py-4">Team Leads</th>
-                    <th className="px-6 py-4">Members</th>
-                    <th className="px-6 py-4 text-right">Actions</th>
-                  </tr>
-                </thead>
+                <thead className="bg-slate-50 text-slate-400 uppercase font-black border-b tracking-widest"><tr><th className="px-6 py-4">Team Name</th><th className="px-6 py-4">Team Leads</th><th className="px-6 py-4">Members</th><th className="px-6 py-4 text-right">Actions</th></tr></thead>
                 <tbody className="divide-y divide-slate-100">
                   {state.teams.map((team: Team) => {
                     const members = state.users.filter((u: User) => u.teamId === team.id);
@@ -136,19 +142,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ store, currentView }) =
                     return (
                       <tr key={team.id} className="hover:bg-slate-50/50 transition-colors">
                         <td className="px-6 py-4 font-bold text-slate-900">{team.name}</td>
-                        <td className="px-6 py-4">
-                           <div className="flex -space-x-2">
-                            {leads.length > 0 ? leads.map(l => (
-                              <div key={l.id} className="w-8 h-8 bg-indigo-600 border-2 border-white rounded-full flex items-center justify-center text-white text-[10px] font-black" title={l.name}>
-                                {(l.name || 'U').charAt(0)}
-                              </div>
-                            )) : <span className="text-slate-400 italic">No Leads</span>}
-                           </div>
-                        </td>
+                        <td className="px-6 py-4"><div className="flex -space-x-2">{leads.length > 0 ? leads.map(l => (<div key={l.id} className="w-8 h-8 bg-indigo-600 border-2 border-white rounded-full flex items-center justify-center text-white text-[10px] font-black" title={l.name}>{(l.name || 'U').charAt(0)}</div>)) : <span className="text-slate-400 italic">No Leads</span>}</div></td>
                         <td className="px-6 py-4 text-slate-500 font-bold">{members.length} Staff</td>
-                        <td className="px-6 py-4 text-right">
-                           <button onClick={() => { setEditingTeam(team); setShowAddUserModal(false); }} className="bg-indigo-50 text-indigo-700 px-4 py-2 rounded-lg font-bold hover:bg-indigo-100 transition-all border border-indigo-100">Manage Team</button>
-                        </td>
+                        <td className="px-6 py-4 text-right"><button onClick={() => { setEditingTeam(team); setShowAddUserModal(false); }} className="bg-indigo-50 text-indigo-700 px-4 py-2 rounded-lg font-bold hover:bg-indigo-100 transition-all border border-indigo-100">Manage Team</button></td>
                       </tr>
                     );
                   })}
@@ -161,33 +157,130 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ store, currentView }) =
 
       {/* CONFIG TAB */}
       {activeTab === 'config' && (
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-          <div className="bg-slate-50 px-6 py-4 border-b border-slate-200 flex items-center gap-2">
-            <i className="fas fa-cog text-slate-400"></i>
-            <h2 className="font-bold text-slate-800">Global System Settings</h2>
-          </div>
-          <div className="p-8 space-y-8">
-            <div className="max-w-2xl">
-              <h3 className="font-bold text-slate-900 mb-2">Work Classification</h3>
-              <p className="text-sm text-slate-500 mb-6">Manage the work types available for Project Managers when initializing projects.</p>
-              <form onSubmit={handleAddWorkType} className="flex gap-2 mb-8">
-                <input type="text" placeholder="e.g. Design, Analysis..." className="flex-grow border border-slate-200 rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-amber-500" value={newWorkType} onChange={(e) => setNewWorkType(e.target.value)} />
-                <button className="bg-amber-500 text-white px-8 py-3 rounded-xl font-bold text-sm shadow-lg shadow-amber-100 hover:bg-amber-600">Add Work Type</button>
-              </form>
-              <div className="flex flex-wrap gap-3">
-                {state.workTypes.map((type: string) => (
-                  <div key={type} className="flex items-center gap-3 px-4 py-3 bg-white text-slate-700 rounded-xl font-bold border border-slate-200 shadow-sm hover:border-amber-200 transition-all group">
-                    {type}
-                    <button onClick={() => removeWorkType(type)} className="text-slate-300 hover:text-red-500 group-hover:text-slate-400 transition-colors"><i className="fas fa-times-circle"></i></button>
-                  </div>
-                ))}
-              </div>
+        <div className="space-y-6">
+            {/* WORK TYPES SECTION */}
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                <div className="bg-slate-50 px-6 py-4 border-b border-slate-200 flex items-center gap-2">
+                    <i className="fas fa-briefcase text-slate-400"></i>
+                    <h2 className="font-bold text-slate-800">Work Classification</h2>
+                </div>
+                <div className="p-8">
+                    <div className="max-w-2xl">
+                        <p className="text-sm text-slate-500 mb-6">Manage the work types available for Project Managers when initializing projects.</p>
+                        <form onSubmit={handleAddWorkType} className="flex gap-2 mb-8">
+                            <input type="text" placeholder="e.g. Design, Analysis..." className="flex-grow border border-slate-200 rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-amber-500" value={newWorkType} onChange={(e) => setNewWorkType(e.target.value)} />
+                            <button className="bg-amber-500 text-white px-8 py-3 rounded-xl font-bold text-sm shadow-lg shadow-amber-100 hover:bg-amber-600">Add Work Type</button>
+                        </form>
+                        <div className="flex flex-wrap gap-3">
+                            {state.workTypes.map((type: string) => (
+                            <div key={type} className="flex items-center gap-3 px-4 py-3 bg-white text-slate-700 rounded-xl font-bold border border-slate-200 shadow-sm hover:border-amber-200 transition-all group">
+                                {type}
+                                <button onClick={() => removeWorkType(type)} className="text-slate-300 hover:text-red-500 group-hover:text-slate-400 transition-colors"><i className="fas fa-times-circle"></i></button>
+                            </div>
+                            ))}
+                        </div>
+                    </div>
+                </div>
             </div>
-          </div>
+
+            {/* SCORING CONFIG SECTION */}
+            <div className="mt-8 pt-6 border-t border-slate-100">
+                <h3 className="text-xs font-black uppercase text-indigo-600 tracking-widest mb-4">Feature Toggles</h3>
+                
+                <div className="grid md:grid-cols-2 gap-4"> {/* Grid container for toggles */}
+                    
+                    {/* Existing Time Edit Toggle */}
+                    <div className="flex items-center justify-between bg-slate-50 p-4 rounded-xl border border-slate-100">
+                        <div>
+                            <p className="font-bold text-slate-800 text-sm">Allow Members to Edit Time</p>
+                            <p className="text-xs text-slate-500">Enable manual timestamp adjustment.</p>
+                        </div>
+                        <div className="relative inline-block w-12 mr-2 align-middle select-none">
+                            <input type="checkbox" className="toggle-checkbox absolute block w-6 h-6 rounded-full bg-white border-4 appearance-none cursor-pointer transition-all duration-300" style={{right: scoring.ALLOW_TIME_EDIT ? '0' : 'auto', left: scoring.ALLOW_TIME_EDIT ? 'auto' : '0', borderColor: scoring.ALLOW_TIME_EDIT ? '#4f46e5' : '#cbd5e1'}} checked={!!scoring.ALLOW_TIME_EDIT} onChange={() => setScoring({...scoring, ALLOW_TIME_EDIT: scoring.ALLOW_TIME_EDIT ? 0 : 1})}/>
+                            <label className={`toggle-label block overflow-hidden h-6 rounded-full cursor-pointer ${scoring.ALLOW_TIME_EDIT ? 'bg-indigo-600' : 'bg-slate-300'}`}></label>
+                        </div>
+                    </div>
+
+                    {/* NEW: Allow Signup Toggle */}
+                    <div className="flex items-center justify-between bg-slate-50 p-4 rounded-xl border border-slate-100">
+                        <div>
+                            <p className="font-bold text-slate-800 text-sm">Allow Public Signup</p>
+                            <p className="text-xs text-slate-500">Show "Join Now" on login page.</p>
+                        </div>
+                        <div className="relative inline-block w-12 mr-2 align-middle select-none">
+                            <input 
+                                type="checkbox" 
+                                className="toggle-checkbox absolute block w-6 h-6 rounded-full bg-white border-4 appearance-none cursor-pointer transition-all duration-300"
+                                style={{right: scoring.ALLOW_SIGNUP ? '0' : 'auto', left: scoring.ALLOW_SIGNUP ? 'auto' : '0', borderColor: scoring.ALLOW_SIGNUP ? '#4f46e5' : '#cbd5e1'}}
+                                checked={!!scoring.ALLOW_SIGNUP} 
+                                onChange={() => setScoring({...scoring, ALLOW_SIGNUP: scoring.ALLOW_SIGNUP ? 0 : 1})}
+                            />
+                            <label className={`toggle-label block overflow-hidden h-6 rounded-full cursor-pointer ${scoring.ALLOW_SIGNUP ? 'bg-indigo-600' : 'bg-slate-300'}`}></label>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                <div className="bg-slate-50 px-6 py-4 border-b border-slate-200 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                        <i className="fas fa-balance-scale text-slate-400"></i>
+                        <h2 className="font-bold text-slate-800">Scoring & Penalties</h2>
+                    </div>
+                    {configMsg && <span className="text-xs font-bold text-green-600 bg-green-50 px-3 py-1 rounded-full border border-green-100">{configMsg}</span>}
+                </div>
+                <div className="p-8">
+                    <p className="text-sm text-slate-500 mb-6">Configure the automated point distribution for member performance.</p>
+                    
+                    <div className="grid md:grid-cols-2 gap-8 max-w-4xl">
+                        {/* Bonuses */}
+                        <div className="space-y-4">
+                            <h3 className="text-xs font-black uppercase text-green-600 tracking-widest border-b border-green-100 pb-2">Bonus Points (Rewards)</h3>
+                            
+                            <div className="flex justify-between items-center">
+                                <label className="text-sm font-bold text-slate-700">Finished On Time</label>
+                                <input type="number" className="w-20 border border-slate-200 rounded-lg p-2 text-right font-bold text-slate-700" value={scoring.BONUS_ON_TIME} onChange={e=>setScoring({...scoring, BONUS_ON_TIME: parseFloat(e.target.value)})} />
+                            </div>
+                            <div className="flex justify-between items-center">
+                                <label className="text-sm font-bold text-slate-700">3 Star Rating</label>
+                                <input type="number" className="w-20 border border-slate-200 rounded-lg p-2 text-right font-bold text-slate-700" value={scoring.BONUS_STAR_3} onChange={e=>setScoring({...scoring, BONUS_STAR_3: parseFloat(e.target.value)})} />
+                            </div>
+                            <div className="flex justify-between items-center">
+                                <label className="text-sm font-bold text-slate-700">4 Star Rating</label>
+                                <input type="number" className="w-20 border border-slate-200 rounded-lg p-2 text-right font-bold text-slate-700" value={scoring.BONUS_STAR_4} onChange={e=>setScoring({...scoring, BONUS_STAR_4: parseFloat(e.target.value)})} />
+                            </div>
+                            <div className="flex justify-between items-center">
+                                <label className="text-sm font-bold text-slate-700">5 Star Rating</label>
+                                <input type="number" className="w-20 border border-slate-200 rounded-lg p-2 text-right font-bold text-slate-700" value={scoring.BONUS_STAR_5} onChange={e=>setScoring({...scoring, BONUS_STAR_5: parseFloat(e.target.value)})} />
+                            </div>
+                        </div>
+
+                        {/* Penalties */}
+                        <div className="space-y-4">
+                            <h3 className="text-xs font-black uppercase text-red-500 tracking-widest border-b border-red-100 pb-2">Blackmarks (Penalties)</h3>
+                            
+                            <div className="flex justify-between items-center">
+                                <label className="text-sm font-bold text-slate-700">Delay Penalty (per hour)</label>
+                                <input type="number" className="w-20 border border-slate-200 rounded-lg p-2 text-right font-bold text-slate-700" value={scoring.BM_DELAY_PER_HR} onChange={e=>setScoring({...scoring, BM_DELAY_PER_HR: parseFloat(e.target.value)})} />
+                            </div>
+                            <div className="flex justify-between items-center">
+                                <label className="text-sm font-bold text-slate-700">Rework Penalty (Flat)</label>
+                                <input type="number" className="w-20 border border-slate-200 rounded-lg p-2 text-right font-bold text-slate-700" value={scoring.BM_REWORK} onChange={e=>setScoring({...scoring, BM_REWORK: parseFloat(e.target.value)})} />
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="mt-8 pt-4 border-t border-slate-100 flex justify-end">
+                        <button onClick={handleSaveConfig} className="bg-slate-900 text-white px-8 py-3 rounded-xl font-bold text-sm hover:bg-slate-800 shadow-lg transition-all">
+                            Save System Configuration
+                        </button>
+                    </div>
+                </div>
+            </div>
         </div>
       )}
 
-      {/* USER EDIT MODAL */}
+      {/* MODALS (User Edit / Team Manage / Add User) - Omitted for brevity as they are identical to previous version */}
       {editingUser && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[80] p-4">
            <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-8 animate-slideUp">
@@ -224,8 +317,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ store, currentView }) =
            </div>
         </div>
       )}
-
-      {/* TEAM MANAGE MODAL */}
       {editingTeam && !showAddUserModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[70] p-4 overflow-y-auto">
           <div className="bg-white rounded-3xl shadow-2xl max-w-xl w-full my-8 overflow-hidden animate-slideUp">
@@ -237,142 +328,29 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ store, currentView }) =
               <button onClick={() => setEditingTeam(null)} className="text-slate-400 hover:text-slate-600"><i className="fas fa-times text-xl"></i></button>
             </div>
             <div className="p-8 space-y-8">
-              
-              {/* Existing Leads */}
               <div>
-                 <div className="flex justify-between items-center mb-4">
-                    <label className="text-[10px] font-black uppercase text-indigo-500 tracking-widest">Existing Team Leads</label>
-                    <span className="text-[10px] font-bold text-slate-400">{currentTeamLeads.length} Assigned</span>
-                 </div>
-                 <div className="space-y-2">
-                    {currentTeamLeads.length === 0 ? (
-                       <div className="p-4 border border-dashed border-slate-200 rounded-xl text-center text-slate-400 italic text-sm">No leads currently assigned.</div>
-                    ) : (
-                       currentTeamLeads.map(lead => (
-                          <div key={lead.id} className="flex items-center justify-between p-3 rounded-xl border border-indigo-100 bg-indigo-50/20">
-                             <div className="flex items-center gap-3">
-                                <div className="w-8 h-8 rounded-lg bg-indigo-600 text-white flex items-center justify-center font-black text-xs">{(lead.name || 'U').charAt(0)}</div>
-                                <div>
-                                   <p className="text-sm font-bold text-slate-900">{lead.name}</p>
-                                   <p className="text-[10px] text-slate-500 font-bold">@{lead.username}</p>
-                                </div>
-                             </div>
-                             <button onClick={() => removeFromTeam(lead.id)} className="text-xs font-bold text-red-400 hover:text-red-600 px-3 py-1 bg-white rounded border border-slate-100 shadow-sm hover:shadow">Remove</button>
-                          </div>
-                       ))
-                    )}
-                 </div>
+                 <div className="flex justify-between items-center mb-4"><label className="text-[10px] font-black uppercase text-indigo-500 tracking-widest">Existing Team Leads</label><span className="text-[10px] font-bold text-slate-400">{currentTeamLeads.length} Assigned</span></div>
+                 <div className="space-y-2">{currentTeamLeads.length === 0 ? (<div className="p-4 border border-dashed border-slate-200 rounded-xl text-center text-slate-400 italic text-sm">No leads currently assigned.</div>) : (currentTeamLeads.map(lead => (<div key={lead.id} className="flex items-center justify-between p-3 rounded-xl border border-indigo-100 bg-indigo-50/20"><div className="flex items-center gap-3"><div className="w-8 h-8 rounded-lg bg-indigo-600 text-white flex items-center justify-center font-black text-xs">{(lead.name || 'U').charAt(0)}</div><div><p className="text-sm font-bold text-slate-900">{lead.name}</p><p className="text-[10px] text-slate-500 font-bold">@{lead.username}</p></div></div><button onClick={() => removeFromTeam(lead.id)} className="text-xs font-bold text-red-400 hover:text-red-600 px-3 py-1 bg-white rounded border border-slate-100 shadow-sm hover:shadow">Remove</button></div>)))}</div>
               </div>
-
-              {/* Existing Members */}
               <div>
-                 <div className="flex justify-between items-center mb-4">
-                    <label className="text-[10px] font-black uppercase text-indigo-500 tracking-widest">Existing Members</label>
-                    <span className="text-[10px] font-bold text-slate-400">{currentTeamMembers.length} Assigned</span>
-                 </div>
-                 <div className="space-y-2 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
-                    {currentTeamMembers.length === 0 ? (
-                       <div className="p-4 border border-dashed border-slate-200 rounded-xl text-center text-slate-400 italic text-sm">No members currently assigned.</div>
-                    ) : (
-                       currentTeamMembers.map(member => (
-                          <div key={member.id} className="flex items-center justify-between p-3 rounded-xl border border-slate-200 bg-white">
-                             <div className="flex items-center gap-3">
-                                <div className="w-8 h-8 rounded-lg bg-slate-100 text-slate-500 flex items-center justify-center font-black text-xs">{(member.name || 'U').charAt(0)}</div>
-                                <div>
-                                   <p className="text-sm font-bold text-slate-900">{member.name}</p>
-                                   <div className="flex gap-2">
-                                     <span className="text-[10px] text-slate-500 font-bold">@{member.username}</span>
-                                     {member.roles.includes(UserRole.TEAM_LEAD) && <span className="text-[8px] bg-indigo-100 text-indigo-600 px-1 rounded uppercase font-bold">Lead Role</span>}
-                                   </div>
-                                </div>
-                             </div>
-                             <button onClick={() => removeFromTeam(member.id)} className="text-xs font-bold text-red-400 hover:text-red-600 px-3 py-1 bg-slate-50 rounded border border-slate-100 hover:bg-red-50">Remove</button>
-                          </div>
-                       ))
-                    )}
-                 </div>
+                 <div className="flex justify-between items-center mb-4"><label className="text-[10px] font-black uppercase text-indigo-500 tracking-widest">Existing Members</label><span className="text-[10px] font-bold text-slate-400">{currentTeamMembers.length} Assigned</span></div>
+                 <div className="space-y-2 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">{currentTeamMembers.length === 0 ? (<div className="p-4 border border-dashed border-slate-200 rounded-xl text-center text-slate-400 italic text-sm">No members currently assigned.</div>) : (currentTeamMembers.map(member => (<div key={member.id} className="flex items-center justify-between p-3 rounded-xl border border-slate-200 bg-white"><div className="flex items-center gap-3"><div className="w-8 h-8 rounded-lg bg-slate-100 text-slate-500 flex items-center justify-center font-black text-xs">{(member.name || 'U').charAt(0)}</div><div><p className="text-sm font-bold text-slate-900">{member.name}</p><div className="flex gap-2"><span className="text-[10px] text-slate-500 font-bold">@{member.username}</span>{member.roles.includes(UserRole.TEAM_LEAD) && <span className="text-[8px] bg-indigo-100 text-indigo-600 px-1 rounded uppercase font-bold">Lead Role</span>}</div></div></div><button onClick={() => removeFromTeam(member.id)} className="text-xs font-bold text-red-400 hover:text-red-600 px-3 py-1 bg-slate-50 rounded border border-slate-100 hover:bg-red-50">Remove</button></div>)))}</div>
               </div>
-
-              {/* Add Button */}
-              <div className="pt-4 border-t border-slate-100">
-                 <button onClick={() => setShowAddUserModal(true)} className="w-full py-4 rounded-xl border-2 border-dashed border-slate-300 text-slate-500 font-bold text-sm hover:border-indigo-500 hover:text-indigo-600 hover:bg-indigo-50 transition-all flex items-center justify-center gap-2">
-                    <i className="fas fa-plus-circle"></i> Add Leads or Members
-                 </button>
-              </div>
+              <div className="pt-4 border-t border-slate-100"><button onClick={() => setShowAddUserModal(true)} className="w-full py-4 rounded-xl border-2 border-dashed border-slate-300 text-slate-500 font-bold text-sm hover:border-indigo-500 hover:text-indigo-600 hover:bg-indigo-50 transition-all flex items-center justify-center gap-2"><i className="fas fa-plus-circle"></i> Add Leads or Members</button></div>
             </div>
-            <div className="bg-slate-50 px-8 py-4 border-t border-slate-200 flex justify-end">
-               <button onClick={() => setEditingTeam(null)} className="px-6 py-2 bg-slate-900 text-white rounded-lg text-xs font-bold uppercase tracking-widest hover:bg-slate-800">Close</button>
-            </div>
+            <div className="bg-slate-50 px-8 py-4 border-t border-slate-200 flex justify-end"><button onClick={() => setEditingTeam(null)} className="px-6 py-2 bg-slate-900 text-white rounded-lg text-xs font-bold uppercase tracking-widest hover:bg-slate-800">Close</button></div>
           </div>
         </div>
       )}
-
-      {/* ADD USER MODAL */}
       {showAddUserModal && editingTeam && (
          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[80] p-4">
             <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full p-6 animate-slideUp flex flex-col max-h-[90vh]">
-               <div className="flex justify-between items-center mb-6 flex-shrink-0">
-                  <div>
-                     <h2 className="text-lg font-black text-slate-900">Add Staff</h2>
-                     <p className="text-xs text-slate-500">Adding to <strong>{editingTeam.name}</strong></p>
-                  </div>
-                  <button onClick={() => setShowAddUserModal(false)} className="text-slate-400 hover:text-slate-600"><i className="fas fa-times text-xl"></i></button>
-               </div>
-
+               <div className="flex justify-between items-center mb-6 flex-shrink-0"><div><h2 className="text-lg font-black text-slate-900">Add Staff</h2><p className="text-xs text-slate-500">Adding to <strong>{editingTeam.name}</strong></p></div><button onClick={() => setShowAddUserModal(false)} className="text-slate-400 hover:text-slate-600"><i className="fas fa-times text-xl"></i></button></div>
                <div className="overflow-y-auto pr-2 custom-scrollbar space-y-8 flex-grow">
-                  {/* Unallocated Leads */}
-                  <div>
-                     <h3 className="text-[10px] font-black uppercase text-indigo-500 tracking-widest mb-3 border-b border-indigo-100 pb-2">Available Team Leads (Unallocated)</h3>
-                     <div className="space-y-2">
-                        {unallocatedLeads.length === 0 ? (
-                           <div className="text-slate-400 italic text-xs py-2">No unallocated leads available.</div>
-                        ) : (
-                           unallocatedLeads.map(u => (
-                              <div key={u.id} className="flex items-center justify-between p-3 rounded-xl border border-slate-200 hover:border-indigo-400 group cursor-pointer transition-all" onClick={() => addToTeam(u.id)}>
-                                 <div className="flex items-center gap-3">
-                                    <div className="w-8 h-8 rounded-lg bg-indigo-100 text-indigo-600 flex items-center justify-center font-black text-xs">{(u.name || 'U').charAt(0)}</div>
-                                    <div>
-                                       <p className="text-sm font-bold text-slate-900">{u.name}</p>
-                                       <p className="text-[10px] text-slate-400">@{u.username}</p>
-                                    </div>
-                                 </div>
-                                 <button className="bg-indigo-600 text-white px-3 py-1 rounded-lg text-xs font-bold opacity-0 group-hover:opacity-100 transition-opacity shadow-lg shadow-indigo-200">Add</button>
-                              </div>
-                           ))
-                        )}
-                     </div>
-                  </div>
-
-                  {/* Unallocated Members */}
-                  <div>
-                     <h3 className="text-[10px] font-black uppercase text-indigo-500 tracking-widest mb-3 border-b border-indigo-100 pb-2">Available Members (Unallocated)</h3>
-                     <div className="space-y-2">
-                        {unallocatedMembers.length === 0 ? (
-                           <div className="text-slate-400 italic text-xs py-2">No unallocated members available.</div>
-                        ) : (
-                           unallocatedMembers.map(u => (
-                              <div key={u.id} className="flex items-center justify-between p-3 rounded-xl border border-slate-200 hover:border-emerald-400 group cursor-pointer transition-all" onClick={() => addToTeam(u.id)}>
-                                 <div className="flex items-center gap-3">
-                                    <div className="w-8 h-8 rounded-lg bg-emerald-100 text-emerald-600 flex items-center justify-center font-black text-xs">{(u.name || 'U').charAt(0)}</div>
-                                    <div>
-                                       <p className="text-sm font-bold text-slate-900">{u.name}</p>
-                                       <div className="flex gap-2">
-                                          <p className="text-[10px] text-slate-400">@{u.username}</p>
-                                          {u.roles.includes(UserRole.TEAM_LEAD) && <span className="text-[9px] bg-indigo-50 text-indigo-600 px-1 rounded font-bold">Also Lead</span>}
-                                       </div>
-                                    </div>
-                                 </div>
-                                 <button className="bg-emerald-600 text-white px-3 py-1 rounded-lg text-xs font-bold opacity-0 group-hover:opacity-100 transition-opacity shadow-lg shadow-emerald-200">Add</button>
-                              </div>
-                           ))
-                        )}
-                     </div>
-                  </div>
+                  <div><h3 className="text-[10px] font-black uppercase text-indigo-500 tracking-widest mb-3 border-b border-indigo-100 pb-2">Available Team Leads (Unallocated)</h3><div className="space-y-2">{unallocatedLeads.length === 0 ? (<div className="text-slate-400 italic text-xs py-2">No unallocated leads available.</div>) : (unallocatedLeads.map(u => (<div key={u.id} className="flex items-center justify-between p-3 rounded-xl border border-slate-200 hover:border-indigo-400 group cursor-pointer transition-all" onClick={() => addToTeam(u.id)}><div className="flex items-center gap-3"><div className="w-8 h-8 rounded-lg bg-indigo-100 text-indigo-600 flex items-center justify-center font-black text-xs">{(u.name || 'U').charAt(0)}</div><div><p className="text-sm font-bold text-slate-900">{u.name}</p><p className="text-[10px] text-slate-400">@{u.username}</p></div></div><button className="bg-indigo-600 text-white px-3 py-1 rounded-lg text-xs font-bold opacity-0 group-hover:opacity-100 transition-opacity shadow-lg shadow-indigo-200">Add</button></div>)))}</div></div>
+                  <div><h3 className="text-[10px] font-black uppercase text-indigo-500 tracking-widest mb-3 border-b border-indigo-100 pb-2">Available Members (Unallocated)</h3><div className="space-y-2">{unallocatedMembers.length === 0 ? (<div className="text-slate-400 italic text-xs py-2">No unallocated members available.</div>) : (unallocatedMembers.map(u => (<div key={u.id} className="flex items-center justify-between p-3 rounded-xl border border-slate-200 hover:border-emerald-400 group cursor-pointer transition-all" onClick={() => addToTeam(u.id)}><div className="flex items-center gap-3"><div className="w-8 h-8 rounded-lg bg-emerald-100 text-emerald-600 flex items-center justify-center font-black text-xs">{(u.name || 'U').charAt(0)}</div><div><p className="text-sm font-bold text-slate-900">{u.name}</p><div className="flex gap-2"><p className="text-[10px] text-slate-400">@{u.username}</p>{u.roles.includes(UserRole.TEAM_LEAD) && <span className="text-[9px] bg-indigo-50 text-indigo-600 px-1 rounded font-bold">Also Lead</span>}</div></div></div><button className="bg-emerald-600 text-white px-3 py-1 rounded-lg text-xs font-bold opacity-0 group-hover:opacity-100 transition-opacity shadow-lg shadow-emerald-200">Add</button></div>)))}</div></div>
                </div>
-
-               <div className="mt-6 pt-4 border-t border-slate-100 flex justify-end">
-                  <button onClick={() => setShowAddUserModal(false)} className="bg-slate-100 text-slate-600 hover:bg-slate-200 px-6 py-2 rounded-lg font-bold text-xs uppercase tracking-widest transition-colors">Done</button>
-               </div>
+               <div className="mt-6 pt-4 border-t border-slate-100 flex justify-end"><button onClick={() => setShowAddUserModal(false)} className="bg-slate-100 text-slate-600 hover:bg-slate-200 px-6 py-2 rounded-lg font-bold text-xs uppercase tracking-widest transition-colors">Done</button></div>
             </div>
          </div>
       )}
