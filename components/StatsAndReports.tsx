@@ -440,23 +440,36 @@ export const ReportGenerator = ({ store, role }) => {
                     )}
                     
                     {role !== 'MEMBER' && (
-                         <div className="space-y-1">
-                             <label className="text-[10px] font-black uppercase text-slate-400">Filter Member</label>
-                             <select className="w-full border-2 border-slate-100 p-2.5 rounded-xl font-bold text-sm bg-white" value={filter.memberId} onChange={e=>setFilter({...filter, memberId:e.target.value})}>
-                                 <option value="">All Members</option>
-                                 {store.state.users.filter((u:any) => {
-                                    if(filter.teamId) return u.teamId === parseInt(filter.teamId);
+                        <div className="space-y-1">
+                            <label className="text-[10px] font-black uppercase text-slate-400">Filter Member</label>
+                            <select 
+                                className="w-full border-2 border-slate-100 p-2.5 rounded-xl font-bold text-sm bg-white" 
+                                value={filter.memberId} 
+                                onChange={e => setFilter({ ...filter, memberId: e.target.value })}
+                            >
+                                <option value="">All Members</option>
+                                {store.state.users.filter((u: any) => {
+                                    // FIX: If user is a Team Lead, ONLY show members of their own team
+                                    if (role === 'TEAM_LEAD') {
+                                        return u.teamId === store.state.currentUser?.teamId;
+                                    }
+                                    
+                                    // Existing logic for PMs (Filter by the selected Team dropdown, if any)
+                                    if (filter.teamId) {
+                                        return u.teamId === parseInt(filter.teamId);
+                                    }
+                                    
                                     return true;
-                                 }).map((u:any)=><option key={u.id} value={u.id}>{u.name}</option>)}
-                             </select>
-                         </div>
+                                }).map((u: any) => (
+                                    <option key={u.id} value={u.id}>{u.name}</option>
+                                ))}
+                            </select>
+                        </div>
                     )}
-                    
                     <button onClick={generate} className="bg-slate-900 text-white py-3 rounded-xl font-black uppercase text-xs shadow-lg hover:bg-slate-800 transition-transform active:scale-95">Generate</button>
                 </div>
             </div>
 
-            {/* ... Rest of the table and ExportToolbar code remains the same ... */}
             {data && data.length > 0 ? (
                 <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
                     <div className="bg-slate-50 px-6 py-4 border-b border-slate-100 flex flex-col md:flex-row justify-between items-center gap-4">

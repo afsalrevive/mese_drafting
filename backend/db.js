@@ -612,4 +612,37 @@ module.exports = {
       db.prepare('DELETE FROM forum_comments WHERE id = ?').run(id);
       return { success: true };
   },
+  // --- ADD THIS INSIDE module.exports ---
+  
+  getAvailability: () => {
+    // 1. Check Teams: Find the latest ETA for active work (not Completed)
+    const teamStmt = db.prepare(`
+      SELECT teamId, MAX(eta) as freeAt 
+      FROM groupAssignments 
+      WHERE status != 'COMPLETED' 
+      GROUP BY teamId
+    `);
+    
+    // 2. Check Members: Find the latest ETA for active work (not Completed)
+    const memberStmt = db.prepare(`
+      SELECT memberId, MAX(eta) as freeAt 
+      FROM memberAssignments 
+      WHERE status != 'COMPLETED' 
+      GROUP BY memberId
+    `);
+
+    // Convert arrays to an easy lookup object: { "id": "date-string" }
+    const teams = {};
+    const members = {};
+
+    teamStmt.all().forEach(row => {
+        if (row.teamId) teams[row.teamId] = row.freeAt;
+    });
+
+    memberStmt.all().forEach(row => {
+        if (row.memberId) members[row.memberId] = row.freeAt;
+    });
+
+    return { teams, members };
+  },
 };

@@ -4,9 +4,17 @@ import { User, UserRole, Project, GroupAssignment, MemberAssignment, Team, AppSt
 const API_BASE = "/api";
 
 export const useStore = () => {
-  const [state, setState] = useState<AppState & { config: any, chatMessages: any[], forumThreads: any[], notifications: any[] }>({
-    users: [], teams: [], projects: [], groupAssignments: [], memberAssignments: [], currentUser: null, workTypes: [], stats: null, config: {},
-    chatMessages: [], forumThreads: [], notifications: [] 
+  const [state, setState] = useState<AppState & { 
+      config: any, 
+      chatMessages: any[], 
+      forumThreads: any[], 
+      notifications: any[],
+      availability: { teams: Record<string, string>, members: Record<string, string> }
+  }>({
+    users: [], teams: [], projects: [], groupAssignments: [], memberAssignments: [], 
+    currentUser: null, workTypes: [], stats: null, config: {},
+    chatMessages: [], forumThreads: [], notifications: [],
+    availability: { teams: {}, members: {} } // <--- NEW INITIAL VALUE
   });
   const [token, setToken] = useState<string | null>(localStorage.getItem('token'));
 
@@ -14,7 +22,7 @@ export const useStore = () => {
   const fetchInitialData = () => {
       fetchTeams(); fetchProjects(); fetchGroupAssignments(); 
       fetchMemberAssignments(); fetchWorkTypes(); fetchUsers(); fetchStats(); 
-      fetchConfig(); fetchNotifications(); fetchChat(); fetchForum();
+      fetchConfig(); fetchNotifications(); fetchChat(); fetchForum();fetchAvailability();
   };
 
   useEffect(() => {
@@ -75,7 +83,16 @@ export const useStore = () => {
      const err = await res.json();
      return { success: false, error: err.error };
   };
-
+  const fetchAvailability = async () => { 
+      if (!token) return;
+      try {
+        const res = await fetch(`${API_BASE}/availability`, {headers:{Authorization:token}});
+        if(res.ok) { 
+            const availability = await res.json(); 
+            setState(p => ({ ...p, availability })); 
+        }
+      } catch(e) {}
+  };
   // --- FETCHERS (GUARDED: Will not run without token) ---
   const fetchUsers = async () => { 
       if (!token) return;
@@ -259,6 +276,6 @@ export const useStore = () => {
     addRemark, addWorkType, removeWorkType, fetchStats, generateReport,
     fetchTeams, fetchProjects, fetchGroupAssignments, fetchMemberAssignments, fetchUsers,
     updateConfig,fetchNotifications, markRead, clearNotifications,fetchChat, sendMessage,
-    fetchForum, createThread, createComment
+    fetchForum, createThread, createComment, fetchAvailability
   };
 };

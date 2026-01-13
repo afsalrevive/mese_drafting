@@ -342,6 +342,16 @@ app.delete('/api/forum/:type/:id', requireAuth, (req, res) => {
 
     res.json(deleteFunc(itemId));
 });
+// Availability Endpoint
+app.get('/api/availability', requireAuth, (req, res) => {
+  try {
+    const data = db.getAvailability();
+    res.json(data);
+  } catch (err) {
+    console.error("Availability Error:", err);
+    res.status(500).json({ error: "Failed to fetch availability" });
+  }
+});
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on http://0.0.0.0:${PORT}`);

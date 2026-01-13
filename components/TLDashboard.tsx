@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { GroupAssignment, MemberAssignment, ScopeItem } from '../types';
+import { GroupAssignment, MemberAssignment, ScopeItem, User } from '../types';
 import { StatsView, ReportGenerator } from './StatsAndReports';
 
 interface TLDashboardProps { 
@@ -36,6 +36,27 @@ const TLDashboard: React.FC<TLDashboardProps> = ({ store, currentView }) => {
   // ----------------------------------------------------------------------
   // HELPERS
   // ----------------------------------------------------------------------
+
+  // Availability Label Generator (For Members)
+  const getAvailabilityLabel = (id: number) => {
+      const availMap = state.availability?.members || {};
+      const freeAt = availMap[id];
+
+      if (!freeAt) return "🟢 Available Now";
+
+      const freeDate = new Date(freeAt);
+      const now = new Date();
+
+      if (freeDate <= now) return "🟢 Available Now";
+
+      const hoursLeft = (freeDate.getTime() - now.getTime()) / (1000 * 60 * 60);
+      
+      if (hoursLeft < 24) {
+          return `🟡 Free at ${freeDate.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`;
+      } else {
+          return `🔴 Busy until ${freeDate.toLocaleDateString()}`;
+      }
+  };
 
   const toggleAllocScope = (div: string, part: string, wt: string) => {
       setAllocScope(prev => {
@@ -357,7 +378,7 @@ const TLDashboard: React.FC<TLDashboardProps> = ({ store, currentView }) => {
                                                         Accept
                                                     </button>
                                                     <button 
-                                                        onClick={() => updateMemberAssignment(ma.id, { status: 'IN_PROGRESS', rejectionReason: null })} 
+                                                        onClick={() => updateMemberAssignment(ma.id, { status: 'IN_PROGRESS', rejectionReason: ' ' })} 
                                                         className="bg-white border border-slate-300 text-slate-500 px-2 py-1 rounded text-[9px] font-bold hover:bg-slate-50"
                                                     >
                                                         Revoke
@@ -403,7 +424,19 @@ const TLDashboard: React.FC<TLDashboardProps> = ({ store, currentView }) => {
                 <div className="space-y-4">
                     <select className="w-full border-2 border-slate-100 p-3 rounded-xl font-bold bg-white" value={allocForm.memberId} onChange={e=>setAllocForm({...allocForm, memberId: e.target.value})}>
                        <option value="">Select Member</option>
-                       {state.users.filter(u=>u.teamId===myTeamId && u.roles.includes('MEMBER')).map(u=><option key={u.id} value={u.id}>{u.name}</option>)}
+                       {state.users.filter((u: any)=>u.teamId===myTeamId && u.roles.includes('MEMBER'))
+                            .sort((a: any, b: any) => {
+                                const dateA = state.availability?.members[a.id] || 0;
+                                const dateB = state.availability?.members[b.id] || 0;
+                                if (dateA === 0 && dateB !== 0) return -1;
+                                if (dateA !== 0 && dateB === 0) return 1;
+                                return new Date(dateA).getTime() - new Date(dateB).getTime();
+                            })
+                            .map((u: any)=>(
+                            <option key={u.id} value={u.id}>
+                                {u.name} ({getAvailabilityLabel(u.id)})
+                            </option>
+                        ))}
                     </select>
                     
                     <div className="p-4 bg-slate-50 rounded-xl border border-slate-100 max-h-60 overflow-y-auto custom-scrollbar">

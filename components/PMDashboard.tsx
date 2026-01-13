@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Project, GroupAssignment, MemberAssignment, ScopeItem } from '../types';
+import { Project, GroupAssignment, MemberAssignment, ScopeItem,Team } from '../types';
 import { StatsView, ReportGenerator } from './StatsAndReports';
 
 interface PMDashboardProps { store: any; currentView: 'home' | 'projects' | 'reports'; }
@@ -68,7 +68,27 @@ const PMDashboard: React.FC<PMDashboardProps> = ({ store, currentView }) => {
   // ----------------------------------------------------------------------
   // HELPER FUNCTIONS
   // ----------------------------------------------------------------------
+  
+  const getAvailabilityLabel = (id: number) => {
+      // Access the availability map from store
+      const availMap = state.availability?.teams || {};
+      const freeAt = availMap[id];
 
+      if (!freeAt) return "🟢 Available Now";
+
+      const freeDate = new Date(freeAt);
+      const now = new Date();
+
+      if (freeDate <= now) return "🟢 Available Now";
+
+      const hoursLeft = (freeDate.getTime() - now.getTime()) / (1000 * 60 * 60);
+      
+      if (hoursLeft < 24) {
+          return `🟡 Free at ${freeDate.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`;
+      } else {
+          return `🔴 Busy until ${freeDate.toLocaleDateString()}`;
+      }
+  };
   // List Helpers
   const toggleList = (list: string[], item: string) => 
     list.includes(item) ? list.filter(i => i !== item) : [...list, item];
@@ -411,16 +431,24 @@ const PMDashboard: React.FC<PMDashboardProps> = ({ store, currentView }) => {
 
          {/* ----------------- RIGHT: DETAILS ----------------- */}
         <div className="lg:col-span-8 bg-white rounded-2xl shadow-sm border border-slate-200 p-6 min-h-[500px]">
-             {activeProject ? (
-                 <>
-                     <div className="flex justify-between items-start mb-6 border-b border-slate-100 pb-4">
+            {activeProject ? (
+                <>
+                    <div className="flex justify-between items-start mb-6 border-b border-slate-100 pb-4">
                         <h2 className="text-2xl font-black text-slate-900">{activeProject.name}</h2>
                         <div className="flex gap-2">
                             <button onClick={() => { setEditingProjectId(activeProject.id); setProjForm(activeProject as any); setShowAddProject(true); }} className="bg-slate-100 px-3 py-1.5 rounded-lg text-xs font-bold">Edit</button>
-                            <button onClick={() => toggleProjectHold(activeProject.id, activeProject.status !== 'ON_HOLD')} className="bg-amber-50 text-amber-600 px-3 py-1.5 rounded-lg text-xs font-bold">{activeProject.status==='ON_HOLD'?'Resume':'Hold'}</button>
+                            
+                            {/* FIX: Send an Object { status: ... }, NOT a boolean */}
+                            <button 
+                                onClick={() => updateProject(activeProject.id, { status: activeProject.status === 'ON_HOLD' ? 'ACTIVE' : 'ON_HOLD' })} 
+                                className="bg-amber-50 text-amber-600 px-3 py-1.5 rounded-lg text-xs font-bold"
+                            >
+                                {activeProject.status === 'ON_HOLD' ? 'Resume' : 'Hold'}
+                            </button>
+                            
                             <button onClick={() => deleteProject(activeProject.id)} className="bg-red-50 text-red-600 px-3 py-1.5 rounded-lg text-xs font-bold">Delete</button>
                         </div>
-                     </div>
+                    </div>
 
                      {/* TREE STRUCTURE VISUALIZATION */}
                      <div className="mb-6 bg-slate-50 p-4 rounded-xl border border-slate-100">
@@ -495,11 +523,7 @@ const PMDashboard: React.FC<PMDashboardProps> = ({ store, currentView }) => {
                                   {/* NEW: Edit Button (Only if not completed) */}
                                   {ga.status !== 'COMPLETED' && ga.status !== 'REJECTED' && (
                                     <button 
-                                        onClick={() => {
-                                            setAllocForm({ projectId: String(ga.projectId), teamId: String(ga.teamId), fileSize: ga.fileSize || '', eta: ga.eta, assignedTime: ga.assignedTime });
-                                            setAllocScope(ga.scope || []);
-                                            setShowDeploy(true);
-                                        }} 
+                                        onClick={() => openEditAlloc(ga)} 
                                         className="bg-white border text-indigo-600 px-3 py-1 rounded text-[10px] font-bold hover:bg-indigo-50"
                                     >
                                         Edit
@@ -628,7 +652,21 @@ const PMDashboard: React.FC<PMDashboardProps> = ({ store, currentView }) => {
                           <label className="text-[10px] font-black uppercase text-slate-400">Team</label>
                           <select required className="w-full border-2 border-slate-100 p-3 rounded-xl font-bold bg-white" value={allocForm.teamId} onChange={e=>setAllocForm({...allocForm, teamId: e.target.value})}>
                               <option value="">Select...</option>
-                              {state.teams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                              {state.teams
+                                .sort((a: Team, b: Team) => {
+                                    const dateA = state.availability?.teams[a.id] || 0;
+                                    const dateB = state.availability?.teams[b.id] || 0;
+                                    // 0 means "Available Now" (priority)
+                                    if (dateA === 0 && dateB !== 0) return -1;
+                                    if (dateA !== 0 && dateB === 0) return 1;
+                                    // Otherwise sort by date (sooner is better)
+                                    return new Date(dateA).getTime() - new Date(dateB).getTime();
+                                })
+                                .map((t: Team) => (
+                                    <option key={t.id} value={t.id}>
+                                        {t.name} ({getAvailabilityLabel(t.id)})
+                                    </option>
+                                ))}
                           </select>
                       </div>
                   </div>
