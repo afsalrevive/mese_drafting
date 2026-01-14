@@ -68,7 +68,29 @@ const PMDashboard: React.FC<PMDashboardProps> = ({ store, currentView }) => {
   // ----------------------------------------------------------------------
   // HELPER FUNCTIONS
   // ----------------------------------------------------------------------
-  
+
+  const getScopeStatusColor = (gaId: number, div: string, part: string, wt: string) => {
+      // Find all allocations by the Team Lead for this specific Group Assignment
+      const memberAssigns = state.memberAssignments.filter((ma: MemberAssignment) => 
+          ma.groupAssignmentId === gaId && 
+          ma.status !== 'REJECTED' // Ignore rejected tasks
+      );
+
+      // Check if this specific item is assigned to ANY member
+      const relevantAssigns = memberAssigns.filter((ma: MemberAssignment) => 
+          ma.scope?.some(s => s.division === div && s.parts.some(p => p.name === part && p.workTypes.includes(wt)))
+      );
+
+      if (relevantAssigns.length === 0) return 'bg-white text-slate-400 border-slate-200'; // Unallocated (No Color)
+
+      // Check if ALL assignments for this item are completed
+      const isComplete = relevantAssigns.every((ma: MemberAssignment) => ma.status === 'COMPLETED');
+      
+      return isComplete 
+          ? 'bg-green-500 text-white border-green-600'  // Completed (Green)
+          : 'bg-amber-400 text-white border-amber-500'; // Allocated (Yellow)
+  };
+
   const getAvailabilityLabel = (id: number) => {
       // Access the availability map from store
       const availMap = state.availability?.teams || {};
@@ -482,63 +504,99 @@ const PMDashboard: React.FC<PMDashboardProps> = ({ store, currentView }) => {
                      {/* TEAM ALLOCATIONS LIST (SCROLLABLE) */}
                      <div className="space-y-3 max-h-[350px] overflow-y-auto custom-scrollbar pr-2">
                         {state.groupAssignments.filter((ga: GroupAssignment) => ga.projectId === activeProject.id).map((ga: GroupAssignment) => (
-                           <div key={ga.id} className="p-4 rounded-xl border border-slate-100 bg-slate-50 flex justify-between items-center transition-all hover:shadow-md">
-                              <div>
-                                  <p className="font-bold text-slate-900 text-sm">{state.teams.find(t=>t.id===ga.teamId)?.name}</p>
-                                  
-                                  {/* NEW: Detailed Times Display */}
-                                  <div className="text-[10px] text-slate-500 mt-1 space-y-0.5">
-                                      <div><span className="font-bold text-slate-400 w-16 inline-block">Assigned:</span> {new Date(ga.assignedTime).toLocaleDateString()}</div>
-                                      <div><span className="font-bold text-amber-500 w-16 inline-block">ETA:</span> {new Date(ga.eta).toLocaleString()}</div>
-                                      {ga.completionTime && (
-                                          <div><span className="font-bold text-green-600 w-16 inline-block">Completed:</span> {new Date(ga.completionTime).toLocaleString()}</div>
-                                      )}
-                                  </div>
-                              </div>
-                              
-                              <div className="flex items-center gap-2">
-                                  <span className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase ${ga.status==='COMPLETED'?'bg-green-100 text-green-700':ga.status==='PENDING_ACK'?'bg-amber-100 text-amber-700':'bg-slate-200 text-slate-500'}`}>{ga.status.replace('_',' ')}</span>
-                                  {ga.status === 'REJECTION_REQ' && (
-                                        <>
-                                            <button 
-                                                onClick={() => {
-                                                    if(confirm("Accept Rejection? This will mark the task as unallocated.")) {
-                                                        updateGroupAssignment(ga.id, { status: 'REJECTED', rejectionReason: ga.rejectionReason + " [Accepted by PM]" });
-                                                    }
-                                                }} 
-                                                className="bg-red-600 text-white px-3 py-1 rounded text-[10px] font-bold shadow-sm hover:bg-red-700"
-                                            >
-                                                Accept
-                                            </button>
-                                            <button 
-                                                onClick={() => updateGroupAssignment(ga.id, { status: 'IN_PROGRESS', rejectionReason: null })} 
-                                                className="bg-white border border-slate-300 text-slate-600 px-3 py-1 rounded text-[10px] font-bold hover:bg-slate-50"
-                                            >
-                                                Revoke
-                                            </button>
-                                        </>
-                                    )}
-                                  {ga.status === 'PENDING_ACK' && <button onClick={()=>setReviewId(ga.id)} className="bg-green-600 text-white px-3 py-1 rounded text-[10px] font-bold shadow-sm">Review</button>}
-                                  
-                                  {/* NEW: Edit Button (Only if not completed) */}
-                                  {ga.status !== 'COMPLETED' && ga.status !== 'REJECTED' && (
-                                    <button 
-                                        onClick={() => openEditAlloc(ga)} 
-                                        className="bg-white border text-indigo-600 px-3 py-1 rounded text-[10px] font-bold hover:bg-indigo-50"
-                                    >
-                                        Edit
-                                    </button>
-                                  )}
+                            <div key={ga.id} className="p-4 rounded-xl border border-slate-100 bg-slate-50 flex flex-col md:flex-row gap-4 items-start md:items-center transition-all hover:shadow-md">
+                                
+                                {/* COLUMN 1: Basic Info & Times */}
+                                <div className="min-w-[140px] shrink-0">
+                                    <p className="font-bold text-slate-900 text-sm truncate">{state.teams.find(t=>t.id===ga.teamId)?.name}</p>
+                                    <div className="text-[10px] text-slate-500 mt-1 space-y-0.5">
+                                        <div><span className="font-bold text-slate-400 w-14 inline-block">Assigned:</span> {new Date(ga.assignedTime).toLocaleDateString()}</div>
+                                        <div><span className="font-bold text-amber-500 w-14 inline-block">ETA:</span> {new Date(ga.eta).toLocaleDateString()}</div>
+                                        {ga.completionTime && (
+                                            <div><span className="font-bold text-green-600 w-14 inline-block">Done:</span> {new Date(ga.completionTime).toLocaleDateString()}</div>
+                                        )}
+                                    </div>
+                                </div>
 
-                                  <button onClick={()=>setTrackerId(ga.id)} className="bg-white border text-blue-600 px-3 py-1 rounded text-[10px] font-bold hover:bg-blue-50">Tracker</button>
-                                  
-                                  {/* HIDE DELETE IF COMPLETED */}
-                                  {ga.status !== 'COMPLETED' && (
-                                    <button onClick={() => deleteGroupAssignment(ga.id)} className="text-red-300 hover:text-red-600 ml-1 transition-colors"><i className="fas fa-trash"></i></button>
-                                  )}
-                              </div>
-                           </div>
-                        ))}
+                                {/* COLUMN 2: SCOPE ALLOCATION TREE (The New Middle Area) */}
+                                <div className="flex-grow w-full md:w-auto bg-white rounded-lg border border-slate-200 p-2 max-h-[80px] overflow-y-auto custom-scrollbar">
+                                    {ga.scope && ga.scope.length > 0 ? (
+                                        <div className="flex flex-col gap-1.5">
+                                            {ga.scope.map((s, sIdx) => (
+                                                <div key={sIdx} className="flex items-start gap-2 text-[9px] leading-tight">
+                                                    <span className="font-bold text-indigo-900 min-w-[50px] mt-0.5">{s.division}</span>
+                                                    <div className="flex flex-wrap gap-x-3 gap-y-1">
+                                                        {s.parts.map((p, pIdx) => (
+                                                            <div key={pIdx} className="flex items-center gap-1">
+                                                                <span className="text-slate-500 font-bold">{p.name}:</span>
+                                                                <div className="flex gap-0.5">
+                                                                    {p.workTypes.map(wt => (
+                                                                        <span 
+                                                                            key={wt} 
+                                                                            className={`px-1 rounded border text-[8px] font-bold ${getScopeStatusColor(ga.id, s.division, p.name, wt)}`}
+                                                                            title={`${wt} - ${getScopeStatusColor(ga.id, s.division, p.name, wt).includes('green') ? 'Completed' : 'Allocated'}`}
+                                                                        >
+                                                                            {wt}
+                                                                        </span>
+                                                                    ))}
+                                                                </div>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    ) : (
+                                        <span className="text-[10px] text-slate-400 italic">No scope defined.</span>
+                                    )}
+                                </div>
+                                
+                                {/* COLUMN 3: Status & Buttons */}
+                                <div className="flex items-center gap-2 shrink-0">
+                                    <span className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase ${ga.status==='COMPLETED'?'bg-green-100 text-green-700':ga.status==='PENDING_ACK'?'bg-amber-100 text-amber-700':'bg-slate-200 text-slate-500'}`}>{ga.status.replace('_',' ')}</span>
+                                    
+                                    {ga.status === 'REJECTION_REQ' && (
+                                            <>
+                                                <button 
+                                                    onClick={() => {
+                                                        if(confirm("Accept Rejection? This will mark the task as unallocated.")) {
+                                                            updateGroupAssignment(ga.id, { status: 'REJECTED', rejectionReason: ga.rejectionReason + " [Accepted by PM]" });
+                                                        }
+                                                    }} 
+                                                    className="bg-red-600 text-white px-3 py-1 rounded text-[10px] font-bold shadow-sm hover:bg-red-700"
+                                                >
+                                                    Accept
+                                                </button>
+                                                <button 
+                                                    onClick={() => updateGroupAssignment(ga.id, { status: 'IN_PROGRESS', rejectionReason: null })} 
+                                                    className="bg-white border border-slate-300 text-slate-600 px-3 py-1 rounded text-[10px] font-bold hover:bg-slate-50"
+                                                >
+                                                    Revoke
+                                                </button>
+                                            </>
+                                        )}
+
+                                    {ga.status === 'PENDING_ACK' && <button onClick={()=>setReviewId(ga.id)} className="bg-green-600 text-white px-3 py-1 rounded text-[10px] font-bold shadow-sm">Review</button>}
+                                    
+                                    {/* FIX: Use openEditAlloc */}
+                                    {ga.status !== 'COMPLETED' && ga.status !== 'REJECTED' && (
+                                        <button 
+                                            onClick={() => openEditAlloc(ga)} 
+                                            className="bg-white border text-indigo-600 px-3 py-1 rounded text-[10px] font-bold hover:bg-indigo-50"
+                                        >
+                                            Edit
+                                        </button>
+                                    )}
+
+                                    <button onClick={()=>setTrackerId(ga.id)} className="bg-white border text-blue-600 px-3 py-1 rounded text-[10px] font-bold hover:bg-blue-50">Tracker</button>
+                                    
+                                    {/* HIDE DELETE IF COMPLETED */}
+                                    {ga.status !== 'COMPLETED' && (
+                                        <button onClick={() => deleteGroupAssignment(ga.id)} className="text-red-300 hover:text-red-600 ml-1 transition-colors"><i className="fas fa-trash"></i></button>
+                                    )}
+                                </div>
+                            </div>
+                            ))}
                         {state.groupAssignments.filter((ga: GroupAssignment) => ga.projectId === activeProject.id).length === 0 && (
                             <p className="text-center text-xs text-slate-400 italic py-4">No teams deployed yet.</p>
                         )}

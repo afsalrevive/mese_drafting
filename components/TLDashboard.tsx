@@ -322,24 +322,43 @@ const TLDashboard: React.FC<TLDashboardProps> = ({ store, currentView }) => {
                                     <tr key={ma.id} className="hover:bg-slate-50 transition-colors">
                                         <td className="p-3 font-bold text-slate-900">{state.users.find(u=>u.id===ma.memberId)?.name}</td>
                                         
-                                        <td className="p-3 text-xs text-slate-500 relative group cursor-help">
-                                            <span className="font-bold underline decoration-dotted decoration-slate-300">
-                                                {ma.scope?.length ? `${ma.scope.length} Divisions` : '-'}
-                                            </span>
-                                            {ma.scope && ma.scope.length > 0 && (
-                                                <div className="absolute left-0 top-6 z-50 hidden group-hover:block bg-slate-800 text-white p-3 rounded-lg shadow-xl w-64">
-                                                    {ma.scope.map((s: any, i: number) => (
-                                                        <div key={i} className="mb-2 last:mb-0 border-b border-slate-700 pb-1 last:border-0">
-                                                            <div className="font-bold text-[10px] text-indigo-300">{s.division}</div>
-                                                            <div className="flex flex-wrap gap-1 mt-1">
-                                                                {s.parts.map((p: any) => (
-                                                                    <span key={p.name} className="text-[9px] bg-slate-700 px-1 rounded">{p.name} ({p.workTypes.join(',')})</span>
-                                                                ))}
-                                                            </div>
+                                        <td className="p-3">
+                                            {/* NEW: Tree Structure Scope Display (No Popup) */}
+                                            <div className="flex flex-col gap-1.5 max-h-[100px] overflow-y-auto custom-scrollbar min-w-[200px]">
+                                                {ma.scope && ma.scope.length > 0 ? ma.scope.map((s, sIdx) => (
+                                                    <div key={sIdx} className="flex flex-col gap-0.5">
+                                                        {/* Division Name */}
+                                                        <span className="text-[10px] font-black text-indigo-900 border-b border-slate-100 pb-0.5 mb-0.5">
+                                                            {s.division}
+                                                        </span>
+                                                        
+                                                        {/* Parts & Work Types */}
+                                                        <div className="flex flex-wrap gap-x-3 gap-y-1 pl-1">
+                                                            {s.parts.map((p, pIdx) => (
+                                                                <div key={pIdx} className="flex items-center gap-1">
+                                                                    <span className="text-[9px] font-bold text-slate-500">{p.name}:</span>
+                                                                    <div className="flex gap-0.5">
+                                                                        {p.workTypes.map(wt => (
+                                                                            <span 
+                                                                                key={wt} 
+                                                                                className={`px-1 rounded border text-[8px] font-bold ${
+                                                                                    ma.status === 'COMPLETED' 
+                                                                                        ? 'bg-green-500 text-white border-green-600'  // Completed
+                                                                                        : 'bg-amber-400 text-white border-amber-500' // In Progress/Allocated
+                                                                                }`}
+                                                                            >
+                                                                                {wt}
+                                                                            </span>
+                                                                        ))}
+                                                                    </div>
+                                                                </div>
+                                                            ))}
                                                         </div>
-                                                    ))}
-                                                </div>
-                                            )}
+                                                    </div>
+                                                )) : (
+                                                    <span className="text-xs text-slate-300">-</span>
+                                                )}
+                                            </div>
                                         </td>
 
                                         <td className="p-3 text-xs text-slate-500">{new Date(ma.assignedTime).toLocaleDateString()} {new Date(ma.assignedTime).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</td>
