@@ -131,10 +131,27 @@ const TLDashboard: React.FC<TLDashboardProps> = ({ store, currentView }) => {
   };
 
   const handleAllocSubmit = () => {
+      // VALIDATION: Check if Member ETA is within Team Limit
+      if (activeGroup && allocForm.eta) {
+          const memberEta = new Date(allocForm.eta);
+          const teamEta = new Date(activeGroup.eta);
+
+          if (memberEta > teamEta) {
+              alert(`⚠️ Invalid ETA!\n\nThe Member ETA cannot be later than the Team deadline.\nTeam Deadline: ${teamEta.toLocaleString()}`);
+              return; 
+          }
+      }
+
       const payload = { ...allocForm, groupAssignmentId: activeGroup!.id, memberId: parseInt(allocForm.memberId), scope: allocScope };
-      if (editMode && editId) { updateMemberAssignment(editId, payload); setEditMode(false); setEditId(null); } 
-      else { assignToMember(payload); }
-      setShowAlloc(false); setAllocScope([]);
+      if (editMode && editId) { 
+          updateMemberAssignment(editId, payload); 
+          setEditMode(false); 
+          setEditId(null); 
+      } else { 
+          assignToMember(payload); 
+      }
+      setShowAlloc(false); 
+      setAllocScope([]);
   };
 
   const handleRejectMember = (ma: MemberAssignment) => {
@@ -304,35 +321,32 @@ const TLDashboard: React.FC<TLDashboardProps> = ({ store, currentView }) => {
                     )) : <p className="text-xs text-slate-400 italic">No scope allocated.</p>}
                 </div>
 
-                    <div className="overflow-x-auto">
-                        <table className="w-full text-left text-xs">
-                           <thead className="bg-slate-50 text-slate-500 font-black uppercase tracking-wider">
+                    {/* MEMBER TABLE (Corrected) */}
+                    <div className="overflow-x-auto max-h-[400px] overflow-y-auto custom-scrollbar border border-slate-100 rounded-xl relative">
+                        <table className="w-full text-left text-xs border-collapse">
+                           <thead className="bg-slate-50 text-slate-500 font-black uppercase tracking-wider sticky top-0 z-10 shadow-sm">
                                 <tr>
-                                    <th className="p-3">Member</th>
-                                    <th className="p-3">Scope</th>
-                                    <th className="p-3">Assigned</th>
-                                    <th className="p-3">ETA</th> 
-                                    <th className="p-3">Status</th>
-                                    <th className="p-3 text-right">Actions</th>
+                                    <th className="p-3 bg-slate-50">Member</th>
+                                    <th className="p-3 bg-slate-50">Scope</th>
+                                    <th className="p-3 bg-slate-50">Assigned</th>
+                                    <th className="p-3 bg-slate-50">ETA</th> 
+                                    <th className="p-3 bg-slate-50">Status</th>
+                                    <th className="p-3 text-right bg-slate-50">Actions</th>
                                 </tr>
                             </thead>
                            <tbody className="divide-y divide-slate-50">
-                            {state.memberAssignments.filter(ma => ma.groupAssignmentId === activeGroup!.id).map(ma => {
+                            {state.memberAssignments.filter((ma: MemberAssignment) => ma.groupAssignmentId === activeGroup!.id).map((ma: MemberAssignment) => {
                                 return (
                                     <tr key={ma.id} className="hover:bg-slate-50 transition-colors">
-                                        <td className="p-3 font-bold text-slate-900">{state.users.find(u=>u.id===ma.memberId)?.name}</td>
+                                        <td className="p-3 font-bold text-slate-900 align-top">{state.users.find((u: User)=>u.id===ma.memberId)?.name}</td>
                                         
-                                        <td className="p-3">
-                                            {/* NEW: Tree Structure Scope Display (No Popup) */}
+                                        <td className="p-3 align-top">
                                             <div className="flex flex-col gap-1.5 max-h-[100px] overflow-y-auto custom-scrollbar min-w-[200px]">
                                                 {ma.scope && ma.scope.length > 0 ? ma.scope.map((s, sIdx) => (
                                                     <div key={sIdx} className="flex flex-col gap-0.5">
-                                                        {/* Division Name */}
                                                         <span className="text-[10px] font-black text-indigo-900 border-b border-slate-100 pb-0.5 mb-0.5">
                                                             {s.division}
                                                         </span>
-                                                        
-                                                        {/* Parts & Work Types */}
                                                         <div className="flex flex-wrap gap-x-3 gap-y-1 pl-1">
                                                             {s.parts.map((p, pIdx) => (
                                                                 <div key={pIdx} className="flex items-center gap-1">
@@ -343,8 +357,8 @@ const TLDashboard: React.FC<TLDashboardProps> = ({ store, currentView }) => {
                                                                                 key={wt} 
                                                                                 className={`px-1 rounded border text-[8px] font-bold ${
                                                                                     ma.status === 'COMPLETED' 
-                                                                                        ? 'bg-green-500 text-white border-green-600'  // Completed
-                                                                                        : 'bg-amber-400 text-white border-amber-500' // In Progress/Allocated
+                                                                                        ? 'bg-green-500 text-white border-green-600'
+                                                                                        : 'bg-amber-400 text-white border-amber-500'
                                                                                 }`}
                                                                             >
                                                                                 {wt}
@@ -361,10 +375,15 @@ const TLDashboard: React.FC<TLDashboardProps> = ({ store, currentView }) => {
                                             </div>
                                         </td>
 
-                                        <td className="p-3 text-xs text-slate-500">{new Date(ma.assignedTime).toLocaleDateString()} {new Date(ma.assignedTime).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</td>
-                                        <td className="p-3 text-xs text-amber-600 font-bold">{new Date(ma.eta).toLocaleString()}</td>
+                                        <td className="p-3 text-xs text-slate-500 align-top">
+                                            <div className="flex flex-col">
+                                                <span>{new Date(ma.assignedTime).toLocaleDateString()}</span>
+                                                <span className="text-[10px] text-slate-400">{new Date(ma.assignedTime).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span>
+                                            </div>
+                                        </td>
+                                        <td className="p-3 text-xs text-amber-600 font-bold align-top">{new Date(ma.eta).toLocaleString()}</td>
                                         
-                                        <td className="p-3">
+                                        <td className="p-3 align-top">
                                             <div className="flex flex-col items-start">
                                                 <span className={`px-2 py-1 rounded text-[9px] font-black uppercase ${ma.status==='COMPLETED'?'bg-green-100 text-green-700':ma.status==='REJECTED'?'bg-red-100 text-red-600':'bg-slate-100 text-slate-600'}`}>{ma.status.replace('_', ' ')}</span>
                                                 {ma.status === 'COMPLETED' && ma.completionTime && (
@@ -373,8 +392,7 @@ const TLDashboard: React.FC<TLDashboardProps> = ({ store, currentView }) => {
                                             </div>
                                         </td>
                                         
-                                        <td className="p-3 text-right flex justify-end gap-2 items-center">
-                                            {/* CHANGE #2: View Proof Button */}
+                                        <td className="p-3 text-right flex justify-end gap-2 items-start align-top">
                                             {ma.status === 'COMPLETED' && ma.screenshot && (
                                                 <button 
                                                     onClick={() => setViewScreenshot(`http://127.0.0.1:3001/${ma.screenshot}`)}
@@ -412,7 +430,8 @@ const TLDashboard: React.FC<TLDashboardProps> = ({ store, currentView }) => {
                                                 </>
                                             )}
                                             
-                                            {ma.status !== 'COMPLETED' && ma.status !== 'REJECTED' && ma.status !== 'REJECTION_REQ' && (
+                                            {/* Fix: Strictly exclude Edit/Delete if status is COMPLETED, REJECTED, REJECTION_REQ, or PENDING_ACK */}
+                                            {ma.status !== 'COMPLETED' && ma.status !== 'REJECTED' && ma.status !== 'REJECTION_REQ' && ma.status !== 'PENDING_ACK' && (
                                                 <>
                                                     <button onClick={()=>openEdit(ma)} className="text-slate-400 hover:text-indigo-600"><i className="fas fa-edit"></i></button>
                                                     <button onClick={()=>{if(window.confirm('Delete?')) deleteMemberAssignment(ma.id)}} className="text-slate-300 hover:text-red-500 ml-2"><i className="fas fa-trash"></i></button>
@@ -484,8 +503,25 @@ const TLDashboard: React.FC<TLDashboardProps> = ({ store, currentView }) => {
                     </div>
 
                     <div className="grid grid-cols-2 gap-4">
-                       <div><label className="text-[10px] uppercase text-slate-400 font-black">Start</label><input type="datetime-local" className="w-full border-2 border-slate-100 p-2 rounded-xl text-xs font-bold" value={allocForm.assignedTime} onChange={e=>setAllocForm({...allocForm, assignedTime: e.target.value})}/></div>
-                       <div><label className="text-[10px] uppercase text-slate-400 font-black">ETA</label><input type="datetime-local" className="w-full border-2 border-slate-100 p-2 rounded-xl text-xs font-bold" value={allocForm.eta} onChange={e=>setAllocForm({...allocForm, eta: e.target.value})}/></div>
+                        <div>
+                            <label className="text-[10px] uppercase text-slate-400 font-black">Start</label>
+                            <input 
+                                type="datetime-local" 
+                                className="w-full border-2 border-slate-100 p-2 rounded-xl text-xs font-bold" 
+                                value={allocForm.assignedTime} 
+                                onChange={e=>setAllocForm({...allocForm, assignedTime: e.target.value})}
+                            />
+                        </div>
+                        <div>
+                            <label className="text-[10px] uppercase text-slate-400 font-black">ETA</label>
+                            <input 
+                                type="datetime-local" 
+                                className="w-full border-2 border-slate-100 p-2 rounded-xl text-xs font-bold" 
+                                value={allocForm.eta} 
+                                onChange={e=>setAllocForm({...allocForm, eta: e.target.value})}
+                                max={activeGroup?.eta ? new Date(activeGroup.eta).toISOString().slice(0, 16) : undefined}
+                            />
+                        </div>
                     </div>
                     <button onClick={handleAllocSubmit} className="w-full bg-indigo-600 text-white py-3 rounded-xl font-black uppercase shadow-lg hover:bg-indigo-700">Confirm</button>
                     <button onClick={()=>{setShowAlloc(false); setEditMode(false);}} className="w-full text-slate-400 py-2 font-bold text-xs uppercase hover:text-slate-600">Cancel</button>
