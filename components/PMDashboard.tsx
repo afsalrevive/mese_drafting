@@ -324,6 +324,13 @@ const PMDashboard: React.FC<PMDashboardProps> = ({ store, currentView }) => {
 
   const handleDeploySubmit = async (e: React.FormEvent) => {
       e.preventDefault();
+
+      // NEW: Validation Check
+      if (!allocForm.projectId || !allocForm.teamId || !allocForm.assignedTime || !allocForm.eta || allocScope.length === 0) {
+          alert("⚠️ Missing Fields!\n\nPlease ensure you have provided:\n- Project & Team\n- At least one Scope item\n- Assigned Time & ETA");
+          return;
+      }
+
       const payload = { ...allocForm, projectId: parseInt(allocForm.projectId), teamId: parseInt(allocForm.teamId), scope: allocScope };
       if (editId) {
           updateGroupAssignment(editId, payload);
@@ -335,7 +342,7 @@ const PMDashboard: React.FC<PMDashboardProps> = ({ store, currentView }) => {
       setAllocScope([]);
       setAllocForm({ projectId: '', teamId: '', fileSize: '', eta: '', assignedTime: getLocalISOString() });
   };
-
+  
   const handleReworkSubmit = async (e: React.FormEvent) => {
       e.preventDefault();
       await triggerRework({ ...allocForm, projectId: parseInt(allocForm.projectId), teamId: parseInt(allocForm.teamId), scope: allocScope });
@@ -807,7 +814,7 @@ const PMDashboard: React.FC<PMDashboardProps> = ({ store, currentView }) => {
                             <td className="p-2 font-mono text-green-600">{ma.completionTime ? new Date(ma.completionTime).toLocaleString() : '-'}</td>
                             
                             <td className="p-2"><span className={`px-2 py-0.5 rounded ${ma.status==='COMPLETED'?'bg-green-100 text-green-700':'bg-amber-100 text-amber-700'}`}>{ma.status}</span></td>
-                            <td className="p-2">{ma.screenshot && <button onClick={()=>setViewScreenshot(`http://127.0.0.1:3001/${ma.screenshot}`)} className="text-blue-600 underline font-bold">View Image</button>}</td>
+                            <td className="p-2">{ma.screenshot && <button onClick={()=>setViewScreenshot(`/${ma.screenshot}`)} className="text-blue-600 underline font-bold">View Image</button>}</td>
                         </tr>
                     ))}
                 </tbody>

@@ -81,7 +81,7 @@ const MemberDashboard: React.FC<MemberDashboardProps> = ({ store, currentView })
     }
 
     try {
-        const response = await fetch('http://127.0.0.1:3001/api/memberAssignments/submit', {
+        const response = await fetch('/api/memberAssignments/submit', {
             method: 'POST',
             headers: { 'Authorization': token }, // Removed "Bearer " as per your server setup
             body: formData

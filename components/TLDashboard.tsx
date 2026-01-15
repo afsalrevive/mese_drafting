@@ -131,14 +131,20 @@ const TLDashboard: React.FC<TLDashboardProps> = ({ store, currentView }) => {
   };
 
   const handleAllocSubmit = () => {
-      // VALIDATION: Check if Member ETA is within Team Limit
+      // VALIDATION 1: Mandatory Fields
+      if (!allocForm.memberId || !allocForm.eta || allocScope.length === 0) {
+          alert("⚠️ Missing Information!\n\nPlease ensure you have selected:\n- A Member\n- At least one Scope Item\n- An ETA");
+          return;
+      }
+
+      // VALIDATION 2: ETA Check (Member ETA <= Team ETA)
       if (activeGroup && allocForm.eta) {
           const memberEta = new Date(allocForm.eta);
           const teamEta = new Date(activeGroup.eta);
 
           if (memberEta > teamEta) {
               alert(`⚠️ Invalid ETA!\n\nThe Member ETA cannot be later than the Team deadline.\nTeam Deadline: ${teamEta.toLocaleString()}`);
-              return; 
+              return;
           }
       }
 
@@ -231,13 +237,24 @@ const TLDashboard: React.FC<TLDashboardProps> = ({ store, currentView }) => {
              {activeGroup ? (
                  <>
                     <div className="flex justify-between items-center mb-6 border-b border-slate-100 pb-4">
-                       <div>
-                          <h2 className="text-xl font-black text-slate-900">{state.projects.find(p=>p.id===activeGroup.projectId)?.name}</h2>
-                          <div className="flex gap-2 mt-1">
-                             <span className="text-xs bg-slate-100 px-2 rounded font-bold text-slate-600">Start: {new Date(activeGroup.assignedTime).toLocaleDateString()}</span>
-                             <span className="text-xs bg-amber-50 text-amber-600 px-2 rounded font-bold">ETA: {new Date(activeGroup.eta).toLocaleString()}</span>
-                          </div>
-                       </div>
+                        <h2 className="text-xl font-black text-slate-900">{state.projects.find(p=>p.id===activeGroup.projectId)?.name}</h2>
+                       <div className="flex flex-wrap gap-2 mt-2">
+                        {/* File Size Badge */}
+                        <span className="text-xs bg-slate-800 text-white px-2 py-0.5 rounded font-bold">
+                            <i className="fas fa-file mr-1"></i>
+                            {activeGroup.fileSize || 'No File'}
+                        </span>
+
+                        {/* Start Date */}
+                        <span className="text-xs bg-slate-100 px-2 py-0.5 rounded font-bold text-slate-600">
+                            Start: {new Date(activeGroup.assignedTime).toLocaleDateString()}
+                        </span>
+
+                        {/* ETA */}
+                        <span className="text-xs bg-amber-50 text-amber-600 px-2 py-0.5 rounded font-bold border border-amber-100">
+                            ETA: {new Date(activeGroup.eta).toLocaleString()}
+                        </span>
+                    </div>
                        <div className="flex gap-2">
                           {(() => {
                               const hasActiveAllocations = state.memberAssignments.some((ma: MemberAssignment) => ma.groupAssignmentId === activeGroup.id && ma.status !== 'REJECTED');
@@ -395,7 +412,7 @@ const TLDashboard: React.FC<TLDashboardProps> = ({ store, currentView }) => {
                                         <td className="p-3 text-right flex justify-end gap-2 items-start align-top">
                                             {ma.status === 'COMPLETED' && ma.screenshot && (
                                                 <button 
-                                                    onClick={() => setViewScreenshot(`http://127.0.0.1:3001/${ma.screenshot}`)}
+                                                    onClick={() => setViewScreenshot(`/${ma.screenshot}`)}
                                                     className="flex items-center gap-1 text-blue-600 hover:text-blue-800 text-[9px] font-bold border border-blue-100 bg-blue-50 px-2 py-1 rounded transition-colors mr-1"
                                                 >
                                                     <i className="fas fa-image"></i> Proof
@@ -540,7 +557,7 @@ const TLDashboard: React.FC<TLDashboardProps> = ({ store, currentView }) => {
                 {reviewData.screenshot && (
                     <div className="mb-4 text-center">
                         <button 
-                            onClick={() => setViewScreenshot(`http://127.0.0.1:3001/${reviewData.screenshot}`)} 
+                            onClick={() => setViewScreenshot(`/${reviewData.screenshot}`)} 
                             className="text-blue-600 text-xs font-bold underline"
                         >
                             <i className="fas fa-image mr-1"></i>View Proof Screenshot
