@@ -477,7 +477,7 @@ const TLDashboard: React.FC<TLDashboardProps> = ({ store, currentView }) => {
              <div className="bg-white rounded-3xl p-8 max-w-lg w-full shadow-2xl">
                 <h2 className="text-xl font-black mb-4">{editMode ? 'Edit Task' : 'Assign Task'}</h2>
                 <div className="space-y-4">
-                    <select className="w-full border-2 border-slate-100 p-3 rounded-xl font-bold bg-white" value={allocForm.memberId} onChange={e=>setAllocForm({...allocForm, memberId: e.target.value})}>
+                    <select className="w-full border-2 border-slate-100 p-3 rounded-xl font-bold bg-white" value={allocForm.memberId} onChange={e=>setAllocForm({...allocForm, memberId: e.target.value})} disabled={editMode}>
                        <option value="">Select Member</option>
                        {state.users.filter((u: any)=>u.teamId===myTeamId && u.roles.includes('MEMBER'))
                             .sort((a: any, b: any) => {
@@ -493,6 +493,12 @@ const TLDashboard: React.FC<TLDashboardProps> = ({ store, currentView }) => {
                             </option>
                         ))}
                     </select>
+                    {editMode && (
+                        <p className="text-[10px] text-amber-600 font-bold flex items-center gap-1">
+                            <i className="fas fa-lock"></i>
+                            Member is locked. To re-assign, please delete this task and create a new one.
+                        </p>
+                    )}
                     
                     <div className="p-4 bg-slate-50 rounded-xl border border-slate-100 max-h-60 overflow-y-auto custom-scrollbar">
                         <h3 className="font-bold text-xs uppercase mb-3 text-slate-500">Select Scope Subset</h3>
@@ -503,15 +509,48 @@ const TLDashboard: React.FC<TLDashboardProps> = ({ store, currentView }) => {
                                     {s.parts.map(p => (
                                         <div key={p.name} className="flex flex-wrap gap-2 text-xs items-center mb-1">
                                             <span className="font-bold text-slate-600 min-w-[40px]">{p.name}:</span>
-                                            {p.workTypes.map(wt => (
-                                                <button 
-                                                key={wt} 
-                                                onClick={()=>toggleAllocScope(s.division, p.name, wt)} 
-                                                className={`px-1.5 py-0.5 border rounded text-[9px] transition-colors ${isAllocSelected(s.division, p.name, wt) ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-400 border-slate-200'}`}
-                                                >
-                                                    {wt}
-                                                </button>
-                                            ))}
+                                            {p.workTypes.map(wt => {
+                                                // 1. Check Status in Database
+                                                const existingMA = state.memberAssignments.find((ma: MemberAssignment) => 
+                                                    ma.groupAssignmentId === activeGroup!.id &&
+                                                    ma.id !== editId && // Ignore self if editing
+                                                    ma.scope?.some((sc: any) => 
+                                                        sc.division === s.division && 
+                                                        sc.parts.some((pt: any) => pt.name === p.name && pt.workTypes.includes(wt))
+                                                    )
+                                                );
+                                                
+                                                const isAllocated = !!existingMA;
+                                                const isCompleted = existingMA?.status === 'COMPLETED';
+                                                const isSelected = isAllocSelected(s.division, p.name, wt);
+
+                                                // 2. Dynamic Styling
+                                                let btnStyle = "px-1.5 py-0.5 border rounded text-[9px] transition-all font-bold flex items-center gap-1 ";
+                                                
+                                                if (isSelected) {
+                                                    if (isCompleted) btnStyle += "bg-blue-600 text-white border-green-400 border-2 shadow-sm"; // Blue w/ Green Border
+                                                    else if (isAllocated) btnStyle += "bg-blue-600 text-white border-yellow-400 border-2 shadow-sm"; // Blue w/ Yellow Border
+                                                    else btnStyle += "bg-indigo-600 text-white border-indigo-600"; // Standard Blue
+                                                } else {
+                                                    if (isCompleted) btnStyle += "bg-green-100 text-green-700 border-green-200";
+                                                    else if (isAllocated) btnStyle += "bg-yellow-50 text-yellow-700 border-yellow-200";
+                                                    else btnStyle += "bg-white text-slate-400 border-slate-200";
+                                                }
+
+                                                return (
+                                                    <button 
+                                                        key={wt} 
+                                                        onClick={()=>toggleAllocScope(s.division, p.name, wt)} 
+                                                        className={btnStyle}
+                                                        title={existingMA ? `Assigned to ${state.users.find((u:any)=>u.id===existingMA.memberId)?.name}` : "Available"}
+                                                    >
+                                                        {wt}
+                                                        {/* Status Icons */}
+                                                        {!isSelected && isCompleted && <i className="fas fa-check text-[7px]"></i>}
+                                                        {!isSelected && isAllocated && <i className="fas fa-user text-[7px]"></i>}
+                                                    </button>
+                                                );
+                                            })}
                                         </div>
                                     ))}
                                 </div>

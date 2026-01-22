@@ -475,7 +475,25 @@ const PMDashboard: React.FC<PMDashboardProps> = ({ store, currentView }) => {
                                 {activeProject.status === 'ON_HOLD' ? 'Resume' : 'Hold'}
                             </button>
                             
-                            <button onClick={() => deleteProject(activeProject.id)} className="bg-red-50 text-red-600 px-3 py-1.5 rounded-lg text-xs font-bold">Delete</button>
+                            <button 
+                                onClick={() => {
+                                    // BARRIER: Check for active teams
+                                    const hasActiveWork = state.groupAssignments.some((ga: GroupAssignment) => ga.projectId === activeProject.id);
+                                    
+                                    if (hasActiveWork) {
+                                        alert(`⛔ CANNOT DELETE PROJECT\n\nThere are teams currently working on this project.\n\nPlease remove all Team Allocations first.`);
+                                        return;
+                                    }
+
+                                    if (window.confirm(`⚠️ DELETE PROJECT?\n\nAre you sure you want to delete "${activeProject.name}"?\n\nThis action cannot be undone.`)) {
+                                        deleteProject(activeProject.id);
+                                        setActiveProjectId(null); // Close the view
+                                    }
+                                }} 
+                                className="bg-red-50 text-red-600 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-red-100 transition-colors"
+                            >
+                                Delete Project
+                            </button>
                         </div>
                     </div>
 
@@ -505,7 +523,27 @@ const PMDashboard: React.FC<PMDashboardProps> = ({ store, currentView }) => {
 
                      <div className="flex justify-between items-center mb-4 mt-8 pt-6 border-t border-slate-100">
                          <h3 className="font-bold text-slate-800">Team Allocations</h3>
-                         <button onClick={() => { setAllocForm({ projectId: String(activeProject.id), teamId: '', fileSize: '', eta: '', assignedTime: new Date().toISOString().slice(0,16) }); setAllocScope([]); setShowDeploy(true); }} className="bg-indigo-600 text-white px-4 py-2 rounded-lg text-xs font-bold shadow-sm hover:bg-indigo-700">Deploy Team</button>
+                         <button 
+    onClick={() => { 
+        setEditId(null); // Clear Edit Mode
+        setAllocScope([]); 
+        
+        // 🧠 SMART RESET: Auto-select the current project if one is active
+        setAllocForm({ 
+            projectId: activeProjectId ? activeProjectId.toString() : '', 
+            teamId: '', 
+            fileSize: '', 
+            eta: '', 
+            assignedTime: getLocalISOString()
+        }); 
+        
+        setShowDeploy(true); 
+    }} 
+    className="bg-slate-900 text-white px-4 py-2 rounded-xl text-xs font-bold shadow-lg shadow-slate-200 hover:bg-slate-800 transition-all flex items-center"
+>
+    <i className="fas fa-plus mr-2"></i>
+    Deploy Work
+</button>
                      </div>
 
                      {/* TEAM ALLOCATIONS LIST (SCROLLABLE) */}
@@ -599,7 +637,33 @@ const PMDashboard: React.FC<PMDashboardProps> = ({ store, currentView }) => {
                                     
                                     {/* HIDE DELETE IF COMPLETED */}
                                     {ga.status !== 'COMPLETED' && (
-                                        <button onClick={() => deleteGroupAssignment(ga.id)} className="text-red-300 hover:text-red-600 ml-1 transition-colors"><i className="fas fa-trash"></i></button>
+                                        <button 
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+
+                                                // 1. Check for sub-tasks (using 'ga.id' instead of 'group.id')
+                                                const hasSubTasks = state.memberAssignments.some(
+                                                    (ma: MemberAssignment) => ma.groupAssignmentId === ga.id
+                                                );
+
+                                                if (hasSubTasks) {
+                                                    alert("⛔ ACTION DENIED\n\nThe Team Lead has already distributed this work.\n\nThe Team Lead must un-assign members before you can delete this.");
+                                                    return;
+                                                }
+
+                                                // 2. Get Team Name safely
+                                                const teamName = state.teams.find((t: any) => t.id === ga.teamId)?.name || 'this team';
+
+                                                // 3. Confirm (using 'ga.id')
+                                                if (window.confirm(`⚠️ CONFIRM DELETE\n\nRemove this assignment from ${teamName}?`)) {
+                                                    deleteGroupAssignment(ga.id);
+                                                }
+                                            }}
+                                            className="w-8 h-8 flex items-center justify-center rounded-full bg-slate-100 text-slate-400 hover:bg-red-50 hover:text-red-500 transition-colors"
+                                            title="Delete Assignment"
+                                        >
+                                            <i className="fas fa-trash"></i>
+                                        </button>
                                     )}
                                 </div>
                             </div>
@@ -692,7 +756,16 @@ const PMDashboard: React.FC<PMDashboardProps> = ({ store, currentView }) => {
                    
                    <div className="flex gap-3 pt-4">
                        <button type="submit" className="flex-1 bg-indigo-600 text-white py-3 rounded-xl font-black uppercase shadow-lg hover:bg-indigo-700 transition-colors">{editingProjectId ? 'Save Changes' : 'Create Project'}</button>
-                       <button type="button" onClick={()=>setShowAddProject(false)} className="flex-1 bg-white border border-slate-200 text-slate-500 py-3 rounded-xl font-black uppercase hover:bg-slate-50 transition-colors">Cancel</button>
+                       <button 
+                            onClick={() => { 
+                                setShowDeploy(false); 
+                                setEditId(null); // 🟢 Clear edit mode on cancel too
+                                setAllocScope([]);
+                            }} 
+                            className="px-4 py-2 rounded-lg font-bold text-slate-500 hover:bg-slate-100 transition-colors"
+                        >
+                            Cancel
+                        </button>
                    </div>
                 </form>
              </div>
@@ -714,17 +787,22 @@ const PMDashboard: React.FC<PMDashboardProps> = ({ store, currentView }) => {
                           </select>
                       </div>
                       <div className="space-y-1">
-                          <label className="text-[10px] font-black uppercase text-slate-400">Team</label>
-                          <select required className="w-full border-2 border-slate-100 p-3 rounded-xl font-bold bg-white" value={allocForm.teamId} onChange={e=>setAllocForm({...allocForm, teamId: e.target.value})}>
-                              <option value="">Select...</option>
-                              {state.teams
+                        <label className="text-[10px] font-black uppercase text-slate-400">Team</label>
+                        <select 
+                            required 
+                            // BARRIER: Lock if editing
+                            disabled={!!editId}
+                            className={`w-full border-2 p-3 rounded-xl font-bold ${editId ? 'bg-slate-100 text-slate-400 cursor-not-allowed border-slate-100' : 'bg-white border-slate-100'}`} 
+                            value={allocForm.teamId} 
+                            onChange={e=>setAllocForm({...allocForm, teamId: e.target.value})}
+                        >
+                            <option value="">Select...</option>
+                            {state.teams
                                 .sort((a: Team, b: Team) => {
                                     const dateA = state.availability?.teams[a.id] || 0;
                                     const dateB = state.availability?.teams[b.id] || 0;
-                                    // 0 means "Available Now" (priority)
                                     if (dateA === 0 && dateB !== 0) return -1;
                                     if (dateA !== 0 && dateB === 0) return 1;
-                                    // Otherwise sort by date (sooner is better)
                                     return new Date(dateA).getTime() - new Date(dateB).getTime();
                                 })
                                 .map((t: Team) => (
@@ -732,8 +810,14 @@ const PMDashboard: React.FC<PMDashboardProps> = ({ store, currentView }) => {
                                         {t.name} ({getAvailabilityLabel(t.id)})
                                     </option>
                                 ))}
-                          </select>
-                      </div>
+                        </select>
+                        {editId && (
+                            <p className="text-[10px] text-amber-600 font-bold flex items-center gap-1">
+                                <i className="fas fa-lock"></i>
+                                Team is locked. To re-assign, delete this allocation and create a new one.
+                            </p>
+                        )}
+                    </div>
                   </div>
                   
                   {allocForm.projectId && selectedDeployProject && (
@@ -750,13 +834,59 @@ const PMDashboard: React.FC<PMDashboardProps> = ({ store, currentView }) => {
                                             <div className="flex flex-wrap gap-1">
                                                 {p.workTypes.map((wt: string) => {
                                                     const isSelected = isAllocSelected(s.division, p.name, wt);
+
+                                                    // 1. STATUS CHECK: Look up this specific work item in existing assignments
+                                                    const existingAssignment = state.groupAssignments.find((ga: GroupAssignment) =>
+                                                        ga.projectId === selectedDeployProject.id &&
+                                                        ga.scope.some((sc: ScopeItem) =>
+                                                            sc.division === s.division &&
+                                                            sc.parts.some((pt: any) =>
+                                                                pt.name === p.name &&
+                                                                pt.workTypes.includes(wt)
+                                                            )
+                                                        )
+                                                    );
+
+                                                    const isCompleted = existingAssignment?.status === 'COMPLETED';
+                                                    const isAllocated = existingAssignment && !isCompleted;
+
+                                                    // 2. DYNAMIC STYLING
+                                                    let buttonClass = "text-[9px] px-2 py-0.5 rounded border transition-all font-bold flex items-center gap-1 ";
+
+                                                    if (isSelected) {
+                                                        // === SELECTED STATE (Blue Fill) ===
+                                                        if (isCompleted) {
+                                                            // Blue Fill + Green Border (Reworking Completed)
+                                                            buttonClass += "bg-blue-600 text-white border-green-400 border-2 shadow-md scale-105";
+                                                        } else if (isAllocated) {
+                                                            // Blue Fill + Yellow Border (Re-assigning Allocated)
+                                                            buttonClass += "bg-blue-600 text-white border-yellow-400 border-2 shadow-md scale-105";
+                                                        } else {
+                                                            // Standard Selection
+                                                            buttonClass += "bg-indigo-600 text-white border-indigo-600";
+                                                        }
+                                                    } else {
+                                                        // === UNSELECTED STATE (Status Color) ===
+                                                        if (isCompleted) {
+                                                            buttonClass += "bg-green-100 text-green-700 border-green-200 hover:bg-green-200";
+                                                        } else if (isAllocated) {
+                                                            buttonClass += "bg-yellow-50 text-yellow-700 border-yellow-200 hover:bg-yellow-100";
+                                                        } else {
+                                                            buttonClass += "bg-white text-slate-400 border-slate-200 hover:border-slate-300 hover:text-slate-600";
+                                                        }
+                                                    }
+
                                                     return (
                                                         <button 
-                                                        type="button" key={wt} 
-                                                        onClick={() => toggleAllocScope(s.division, p.name, wt)}
-                                                        className={`text-[9px] px-2 py-0.5 rounded border transition-all ${isSelected ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-400 border-slate-200'}`}
+                                                            type="button" key={wt} 
+                                                            onClick={() => toggleAllocScope(s.division, p.name, wt)}
+                                                            className={buttonClass}
+                                                            title={isCompleted ? `Completed by ${state.teams.find((t:any)=>t.id===existingAssignment?.teamId)?.name}` : isAllocated ? `Allocated to ${state.teams.find((t:any)=>t.id===existingAssignment?.teamId)?.name}` : "Available"}
                                                         >
                                                             {wt}
+                                                            {/* Tiny Icons for Status Context */}
+                                                            {!isSelected && isCompleted && <i className="fas fa-check text-[8px]"></i>}
+                                                            {!isSelected && isAllocated && <i className="fas fa-user-clock text-[8px]"></i>}
                                                         </button>
                                                     );
                                                 })}

@@ -57,7 +57,7 @@ db.exec(`
 
   CREATE TABLE IF NOT EXISTS memberAssignments (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    groupAssignmentId INTEGER,
+    groupAssignmentId INTEGER,  -- This links to the parent project
     memberId INTEGER,
     scope TEXT,
     assignedTime TEXT,
@@ -70,7 +70,9 @@ db.exec(`
     bonusAwarded REAL DEFAULT 0,
     blackmarksAwarded REAL DEFAULT 0,
     rejectionReason TEXT,
-    screenshot TEXT
+    screenshot TEXT,
+
+    FOREIGN KEY (groupAssignmentId) REFERENCES groupAssignments(id) ON DELETE CASCADE
   );
 
   CREATE TABLE IF NOT EXISTS work_types (
@@ -368,7 +370,15 @@ module.exports = {
   },
 
   deleteProject: (id) => { const safeId = safeInt(id); db.prepare('DELETE FROM memberAssignments WHERE groupAssignmentId IN (SELECT id FROM groupAssignments WHERE projectId = ?)').run(safeId); db.prepare('DELETE FROM groupAssignments WHERE projectId = ?').run(safeId); db.prepare('DELETE FROM projects WHERE id = ?').run(safeId); return { success: true }; },
-  deleteGroupAssignment: (id) => { const safeId = safeInt(id); db.prepare('DELETE FROM memberAssignments WHERE groupAssignmentId = ?').run(safeId); db.prepare('DELETE FROM groupAssignments WHERE id = ?').run(safeId); return { success: true }; },
+  deleteGroupAssignment: (id) => {
+    // 1. Delete the Member Tasks (Children)
+    db.prepare('DELETE FROM memberAssignments WHERE groupAssignmentId = ?').run(id);
+
+    // 2. Delete the Project Assignment (Parent)
+    const info = db.prepare('DELETE FROM groupAssignments WHERE id = ?').run(id);
+    
+    return info;
+  },
   deleteMemberAssignment: (id) => { const safeId = safeInt(id); db.prepare('DELETE FROM memberAssignments WHERE id = ?').run(safeId); return { success: true }; },
   getWorkTypes: () => stmts.getWorkTypes.all().map(wt => wt.name),
   addWorkType: (name) => { try { stmts.insertWorkType.run(name); return { success: true, name }; } catch (err) { return { success: false, error: 'Already exists' }; } },

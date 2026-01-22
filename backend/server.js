@@ -177,7 +177,22 @@ app.post('/api/rework', requireAuth, (req, res) => { res.json(db.triggerRework(r
 app.get('/api/groupAssignments', requireAuth, (req, res) => res.json(db.getGroupAssignments()));
 app.post('/api/groupAssignments', requireAuth, (req, res) => { res.json(db.insertGroupAssignment(req.body.projectId, req.body.teamId, req.body.scope, req.body.fileSize, req.body.assignedTime, req.body.eta, 'PENDING', req.body.remarks));});
 app.put('/api/groupAssignments/:id', requireAuth, (req, res) => res.json(db.updateGroupAssignment(req.params.id, req.body)));
-app.delete('/api/groupAssignments/:id', requireAuth, (req, res) => res.json(db.deleteGroupAssignment(req.params.id)));
+app.delete('/api/groupAssignments/:id', requireAuth, (req, res) => {
+    const id = req.params.id;
+    try {
+        // Call the helper function we just added to db.js
+        const result = db.deleteGroupAssignment(id);
+
+        if (result.changes === 0) {
+            return res.status(404).json({ error: "Assignment not found" });
+        }
+
+        res.json({ message: "Deleted successfully" });
+    } catch (err) {
+        console.error("Delete Error:", err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
 app.get('/api/memberAssignments', requireAuth, (req, res) => res.json(db.getMemberAssignments()));
 app.post('/api/memberAssignments', requireAuth, (req, res) => res.json(db.insertMemberAssignment(req.body.groupAssignmentId, req.body.memberId, req.body.scope, req.body.assignedTime, req.body.eta, req.body.completionTime, 'IN_PROGRESS', req.body.remarks, req.body.reworkFromId, 0, 0)));
 app.put('/api/memberAssignments/:id', requireAuth, (req, res) => res.json(db.updateMemberAssignment(req.params.id, req.body)));
@@ -352,6 +367,8 @@ app.get('/api/availability', requireAuth, (req, res) => {
     res.status(500).json({ error: "Failed to fetch availability" });
   }
 });
+
+
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on http://0.0.0.0:${PORT}`);
