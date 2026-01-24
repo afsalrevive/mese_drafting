@@ -143,11 +143,11 @@ export const StatsView = ({ stats, role, userName }) => {
             {/* Admin / PM Stats */}
             {(role === 'PROJECT_MANAGER' || role === 'ADMIN') && (
                 <>
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
                         <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100"><p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Projects Done (7d)</p><p className="text-3xl font-black text-emerald-500">{stats.pmCompletedLastWeek}</p></div>
                         <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100"><p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Active Projects</p><p className="text-3xl font-black text-indigo-600">{stats.pmActiveProjects}</p></div>
                     </div>
-                    <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                         <LeaderboardCard title="Top Teams" data={stats.topTeams} icon="fa-trophy" colorClass="text-yellow-500" />
                         <BarChartCard title="Team Productivity" data={stats.teamProductivity} valueSuffix="ratio" barColor="bg-blue-500" />
                         <BarChartCard title="Avg Time (Hrs)" data={stats.teamAvgTime} valueSuffix="hrs" barColor="bg-amber-400" />
@@ -172,7 +172,7 @@ export const StatsView = ({ stats, role, userName }) => {
             {/* Member Stats (With Graph) */}
             {role === 'MEMBER' && (
                 <>
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
                         <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
                             <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">My Net Score</p>
                             <p className="text-4xl font-black text-slate-900">{stats.scoreData ? (stats.scoreData.bonusPoints - stats.scoreData.blackmarks) : 0}</p>
@@ -413,7 +413,7 @@ export const ReportGenerator = ({ store, role }) => {
         <div className="space-y-6 animate-fadeIn">
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
                 <h3 className="font-black text-lg mb-6 text-slate-900">Generate Report</h3>
-                <div className="grid grid-cols-2 md:grid-cols-6 gap-4 items-end">
+                <div className="flex flex-col md:grid md:grid-cols-6 gap-4 items-stretch md:items-end">
                     
                     <div className="space-y-1"><label className="text-[10px] font-black uppercase text-slate-400">Start Date</label><input type="date" className="w-full border-2 border-slate-100 p-2.5 rounded-xl font-bold text-sm" value={filter.startDate} onChange={e=>setFilter({...filter, startDate:e.target.value})} /></div>
                     <div className="space-y-1"><label className="text-[10px] font-black uppercase text-slate-400">End Date</label><input type="date" className="w-full border-2 border-slate-100 p-2.5 rounded-xl font-bold text-sm" value={filter.endDate} onChange={e=>setFilter({...filter, endDate:e.target.value})} /></div>

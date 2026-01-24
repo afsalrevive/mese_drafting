@@ -47,7 +47,8 @@ export interface Project {
   status: 'ACTIVE' | 'ON_HOLD' | 'COMPLETED';
   remarks?: string;
   holdStartTime?: string;     
-  totalHoldDuration?: number; 
+  totalHoldDuration?: number;
+  scopeStructure?: string;
 }
 
 export interface GroupAssignment {

@@ -196,13 +196,14 @@ const stmts = {
   insertUser: db.prepare('INSERT INTO users (name, username, password, email, roles) VALUES (?, ?, ?, ?, ?)'),
   updateUser: db.prepare('UPDATE users SET name = COALESCE(?, name), username = COALESCE(?, username), password = COALESCE(?, password), email = COALESCE(?, email), avatar = COALESCE(?, avatar), roles = COALESCE(?, roles), isApproved = COALESCE(?, isApproved), blackmarks = COALESCE(?, blackmarks), bonusPoints = COALESCE(?, bonusPoints), teamId = COALESCE(?, teamId) WHERE id = ?'),
   deleteUser: db.prepare('DELETE FROM users WHERE id = ?'),
+  getWorkTypes: db.prepare("SELECT name FROM work_types ORDER BY name ASC"),
   
   getTeams: db.prepare('SELECT * FROM teams'),
   insertTeam: db.prepare('INSERT INTO teams (name, leadIds) VALUES (?, ?)'),
   
   getProjects: db.prepare('SELECT * FROM projects'),
   insertProject: db.prepare('INSERT INTO projects (name, date, divisions, partNos, workTypes, status, remarks) VALUES (?, ?, ?, ?, ?, ?, ?)'),
-  updateProject: db.prepare('UPDATE projects SET name = COALESCE(?, name), date = COALESCE(?, date), divisions = COALESCE(?, divisions), partNos = COALESCE(?, partNos), workTypes = COALESCE(?, workTypes), status = COALESCE(?, status), remarks = COALESCE(?, remarks), holdStartTime = COALESCE(?, holdStartTime), totalHoldDuration = COALESCE(?, totalHoldDuration) WHERE id = ?'),
+  updateProject: db.prepare('UPDATE projects SET name = COALESCE(?, name), date = COALESCE(?, date), divisions = COALESCE(?, divisions), partNos = COALESCE(?, partNos), workTypes = COALESCE(?, workTypes), status = COALESCE(?, status), remarks = COALESCE(?, remarks), holdStartTime = COALESCE(?, holdStartTime), totalHoldDuration = COALESCE(?, totalHoldDuration), scopeStructure = COALESCE(?, scopeStructure) WHERE id = ?'),
   
   getGroupAssignments: db.prepare('SELECT * FROM groupAssignments'),
   insertGroupAssignment: db.prepare('INSERT INTO groupAssignments (projectId, teamId, scope, fileSize, assignedTime, eta, status, remarks, rating) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)'),
@@ -214,7 +215,6 @@ const stmts = {
   insertMemberAssignment: db.prepare('INSERT INTO memberAssignments (groupAssignmentId, memberId, scope, assignedTime, eta, completionTime, status, remarks, reworkFromId, bonusAwarded, blackmarksAwarded, rating) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)'),
   updateMemberAssignment: db.prepare('UPDATE memberAssignments SET groupAssignmentId = COALESCE(?, groupAssignmentId), memberId = COALESCE(?, memberId), scope = COALESCE(?, scope), assignedTime = COALESCE(?, assignedTime), eta = COALESCE(?, eta), completionTime = COALESCE(?, completionTime), status = COALESCE(?, status), remarks = COALESCE(?, remarks), reworkFromId = COALESCE(?, reworkFromId), bonusAwarded = COALESCE(?, bonusAwarded), blackmarksAwarded = COALESCE(?, blackmarksAwarded), rating = COALESCE(?, rating), rejectionReason = COALESCE(?, rejectionReason), screenshot = COALESCE(?, screenshot) WHERE id = ?'),
   
-  getWorkTypes: db.prepare('SELECT name FROM work_types'),
   insertWorkType: db.prepare('INSERT INTO work_types (name) VALUES (?)'),
   deleteWorkType: db.prepare('DELETE FROM work_types WHERE name = ?'),
 
@@ -275,18 +275,27 @@ module.exports = {
     partNos: JSON.parse(p.partNos || '[]'), 
     workTypes: JSON.parse(p.workTypes || '[]') 
   })),
-  insertProject: (name, date, divisions, partNos, workTypes, status, remarks) => { 
-      const result = stmts.insertProject.run(
-          name, 
-          date, 
-          JSON.stringify(divisions || []), 
-          JSON.stringify(partNos || []), 
-          JSON.stringify(workTypes || []), 
-          status, 
-          remarks
-      ); 
-      return { id: result.lastInsertRowid, name, date, divisions, partNos, workTypes, status, remarks }; 
-  },
+
+  insertProject: (name, date, divisions, partNos, workTypes, status, remarks, scopeStructure) => {
+    const stmt = db.prepare(`
+        INSERT INTO projects (
+            name, date, divisions, partNos, workTypes, status, remarks, scopeStructure
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    const info = stmt.run(
+        name, 
+        date, 
+        JSON.stringify(divisions), 
+        JSON.stringify(partNos), 
+        JSON.stringify(workTypes), 
+        status || 'ACTIVE', 
+        remarks || '',
+        scopeStructure
+    );
+
+    return { id: info.lastInsertRowid };
+},
   updateProject: (id, updates) => { 
     stmts.updateProject.run(
         safe(updates.name), 
@@ -297,11 +306,12 @@ module.exports = {
         safe(updates.status), 
         safe(updates.remarks), 
         safe(updates.holdStartTime), 
-        safeInt(updates.totalHoldDuration), 
+        safeInt(updates.totalHoldDuration),
+        updates.scopeStructure || null,
         safeInt(id)
     ); 
     return { success: true }; 
-  },
+},
   
   getGroupAssignments: () => stmts.getGroupAssignments.all().map(a => ({ ...a, scope: JSON.parse(a.scope || '[]') })),
   insertGroupAssignment: (projectId, teamId, scope, fileSize, assignedTime, eta, status, remarks) => {
@@ -380,9 +390,87 @@ module.exports = {
     return info;
   },
   deleteMemberAssignment: (id) => { const safeId = safeInt(id); db.prepare('DELETE FROM memberAssignments WHERE id = ?').run(safeId); return { success: true }; },
-  getWorkTypes: () => stmts.getWorkTypes.all().map(wt => wt.name),
-  addWorkType: (name) => { try { stmts.insertWorkType.run(name); return { success: true, name }; } catch (err) { return { success: false, error: 'Already exists' }; } },
-  removeWorkType: (name) => { stmts.deleteWorkType.run(name); return { success: true }; },
+  getWorkTypes: () => {
+        try {
+            // 🟢 DIRECT EXECUTION (No 'stmts' needed)
+            const rows = db.prepare("SELECT name FROM work_types ORDER BY name ASC").all();
+            return rows.map(row => row.name);
+        } catch (err) {
+            console.error("WorkType Error:", err.message);
+            return [];
+        }
+    },
+  addWorkType: (name) => {
+        // Check if exists (Case-insensitive check is safer)
+        const existing = db.prepare("SELECT 1 FROM work_types WHERE LOWER(name) = LOWER(?)").get(name);
+        if (existing) {
+            throw new Error(`Work Type '${name}' already exists.`);
+        }
+
+        db.prepare("INSERT INTO work_types (name) VALUES (?)").run(name);
+        return { success: true };
+    },
+  removeWorkType: (name) => {
+      // We look for the JSON string version (e.g., "Drafting") inside the columns
+      const searchStr = JSON.stringify(name);
+      const pattern = `%${searchStr}%`;
+
+      // Check 1: Is it used in any Project Definition?
+      const inProjects = db.prepare("SELECT name FROM projects WHERE workTypes LIKE ? LIMIT 1").get(pattern);
+      if (inProjects) throw new Error(`Cannot delete: Used in Project '${inProjects.name}'`);
+
+      // Check 2: Is it used in any Scope Rules?
+      const inRules = db.prepare("SELECT name FROM projects WHERE scopeStructure LIKE ? LIMIT 1").get(pattern);
+      if (inRules) throw new Error(`Cannot delete: Used in Scope Rules for '${inRules.name}'`);
+
+      // Check 3: Is it assigned to a Team?
+      const inTeams = db.prepare("SELECT id FROM groupAssignments WHERE scope LIKE ? LIMIT 1").get(pattern);
+      if (inTeams) throw new Error("Cannot delete: Currently assigned to a Team");
+
+      // Check 4: Is it assigned to a Member?
+      const inMembers = db.prepare("SELECT id FROM memberAssignments WHERE scope LIKE ? LIMIT 1").get(pattern);
+      if (inMembers) throw new Error("Cannot delete: Currently assigned to a Member");
+
+      // If we get here, it's safe to delete
+      db.prepare("DELETE FROM work_types WHERE name = ?").run(name);
+      return { success: true };
+  },
+
+  updateWorkType: (oldName, newName) => {
+      // 1. Safety Check: Does the new name already exist?
+      if (oldName.toLowerCase() !== newName.toLowerCase()) {
+          const duplicate = db.prepare("SELECT 1 FROM work_types WHERE LOWER(name) = LOWER(?)").get(newName);
+          if (duplicate) {
+              throw new Error(`Work Type '${newName}' already exists.`);
+          }
+      }
+
+      const transaction = db.transaction(() => {
+          // 2. Update Definition
+          db.prepare("UPDATE work_types SET name = ? WHERE name = ?").run(newName, oldName);
+
+          // 3. Update Usage (Projects, Teams, Members)
+          const searchStr = JSON.stringify(oldName);
+          const replaceStr = JSON.stringify(newName);
+
+          // Update Projects (List & Rules)
+          db.prepare(`UPDATE projects SET workTypes = REPLACE(workTypes, ?, ?) WHERE workTypes LIKE ?`)
+            .run(searchStr, replaceStr, `%${searchStr}%`);
+            
+          db.prepare(`UPDATE projects SET scopeStructure = REPLACE(scopeStructure, ?, ?) WHERE scopeStructure LIKE ?`)
+            .run(searchStr, replaceStr, `%${searchStr}%`);
+
+          // Update Assignments (Teams & Members)
+          db.prepare(`UPDATE groupAssignments SET scope = REPLACE(scope, ?, ?) WHERE scope LIKE ?`)
+            .run(searchStr, replaceStr, `%${searchStr}%`);
+            
+          db.prepare(`UPDATE memberAssignments SET scope = REPLACE(scope, ?, ?) WHERE scope LIKE ?`)
+            .run(searchStr, replaceStr, `%${searchStr}%`);
+      });
+
+      transaction();
+      return { success: true };
+  },
 
   toggleHold: (projectId, isHold) => {
     const p = db.prepare('SELECT * FROM projects WHERE id = ?').get(projectId);

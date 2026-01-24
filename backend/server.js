@@ -63,10 +63,9 @@ const forumStorage = multer.diskStorage({
 
 const uploadForum = multer({ 
   storage: forumStorage,
-  limits: { fileSize: 10000000 } // 10MB (Higher limit for discussions)
+  limits: { fileSize: 10000000 }
 });
 
-// Serve static files (Access via http://host/uploads/screenshots/filename.png)
 app.use('/uploads', express.static('uploads'));
 
 
@@ -169,7 +168,7 @@ app.post('/api/reports', requireAuth, (req, res) => {
 app.get('/api/teams', requireAuth, (req, res) => res.json(db.getTeams()));
 app.post('/api/teams', requireAuth, (req, res) => res.json(db.insertTeam(req.body.name, req.body.leadIds)));
 app.get('/api/projects', requireAuth, (req, res) => res.json(db.getProjects()));
-app.post('/api/projects', requireAuth, (req, res) => res.json(db.insertProject(req.body.name, req.body.date, req.body.divisions, req.body.partNos, req.body.workTypes, req.body.status, req.body.remarks)));
+app.post('/api/projects', requireAuth, (req, res) => res.json(db.insertProject(req.body.name, req.body.date, req.body.divisions, req.body.partNos, req.body.workTypes, req.body.status, req.body.remarks, req.body.scopeStructure)));
 app.put('/api/projects/:id', requireAuth, (req, res) => res.json(db.updateProject(req.params.id, req.body)));
 app.put('/api/projects/:id/hold', requireAuth, (req, res) => { db.toggleHold(req.params.id, req.body.isHold); res.json({ success: true }); });
 app.delete('/api/projects/:id', requireAuth, (req, res) => res.json(db.deleteProject(req.params.id)));
@@ -197,9 +196,51 @@ app.get('/api/memberAssignments', requireAuth, (req, res) => res.json(db.getMemb
 app.post('/api/memberAssignments', requireAuth, (req, res) => res.json(db.insertMemberAssignment(req.body.groupAssignmentId, req.body.memberId, req.body.scope, req.body.assignedTime, req.body.eta, req.body.completionTime, 'IN_PROGRESS', req.body.remarks, req.body.reworkFromId, 0, 0)));
 app.put('/api/memberAssignments/:id', requireAuth, (req, res) => res.json(db.updateMemberAssignment(req.params.id, req.body)));
 app.delete('/api/memberAssignments/:id', requireAuth, (req, res) => res.json(db.deleteMemberAssignment(req.params.id)));
-app.get('/api/workTypes', requireAuth, (req, res) => res.json(db.getWorkTypes()));
-app.post('/api/workTypes', requireAuth, (req, res) => { const r = db.addWorkType(req.body.name); r.success ? res.json(r) : res.status(400).json(r); });
-app.delete('/api/workTypes/:name', requireAuth, (req, res) => res.json(db.removeWorkType(req.params.name)));
+app.get('/api/config/worktype', requireAuth, (req, res) => {
+    // Returns simple array: ["Drafting", "Modeling"]
+    res.json(db.getWorkTypes()); 
+});
+
+app.post('/api/config/worktype', requireAuth, (req, res) => {
+    if (!req.user.roles.includes('ADMIN')) return res.status(403).json({ error: 'Forbidden' });
+    
+    try {
+        const result = db.addWorkType(req.body.name);
+        res.json(result);
+    } catch (err) {
+        res.status(400).json({ error: err.message });
+    }
+});
+
+app.delete('/api/config/worktype/:name', requireAuth, (req, res) => {
+    if (!req.user.roles.includes('ADMIN')) return res.status(403).json({ error: 'Forbidden' });
+    
+    try {
+        // This will now THROW an error if it's used in projects/teams
+        const result = db.removeWorkType(req.params.name);
+        res.json(result);
+    } catch (err) {
+        // Catch the "Cannot delete" error and send 400
+        res.status(400).json({ error: err.message });
+    }
+});
+
+app.put('/api/config/worktype', requireAuth, (req, res) => {
+    if (!req.user.roles.includes('ADMIN')) return res.status(403).json({ error: 'Forbidden' });
+
+    const { oldName, newName } = req.body;
+    if (!oldName || !newName) return res.status(400).json({ error: 'Missing parameters' });
+
+    try {
+        db.updateWorkType(oldName, newName);
+        res.json({ success: true });
+    } catch (err) {
+        console.error("Rename failed:", err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// --- GENERAL CONFIG ROUTES ---
 app.get('/api/config/public', (req, res) => {
     res.json(db.getPublicConfig());
 });
@@ -210,7 +251,6 @@ app.put('/api/config', requireAuth, (req, res) => {
     if (!req.user.roles.includes('ADMIN')) return res.status(403).json({ error: 'Forbidden' });
     res.json(db.updateConfig(req.body));
 });
-
 app.get('/api/notifications', requireAuth, (req, res) => res.json(db.getNotifications(req.user.id)));
 app.post('/api/notifications/read', requireAuth, (req, res) => res.json(db.markNotificationsRead(req.user.id)));
 app.delete('/api/notifications', requireAuth, (req, res) => res.json(db.clearNotifications(req.user.id)));
@@ -367,8 +407,6 @@ app.get('/api/availability', requireAuth, (req, res) => {
     res.status(500).json({ error: "Failed to fetch availability" });
   }
 });
-
-
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on http://0.0.0.0:${PORT}`);

@@ -48,12 +48,25 @@ const PMDashboard: React.FC<PMDashboardProps> = ({ store, currentView }) => {
   
   // ORIGINAL PROJ FORM (Lists for UI)
   const [projForm, setProjForm] = useState({ 
-    name: '', date: getLocalISOString().split('T')[0], 
+    name: '', date: '', 
     divisions: [] as string[], partNos: [] as string[], workTypes: [] as string[],
     newDivPrefix: '', newDivCount: '', newDivStart: '1',
     newPartPrefix: '', newPartCount: '', newPartStart: '1',
-    manualDiv: '', manualPart: ''
+    manualDiv: '', manualPart: '',
+    
+    // Scope Mapping State
+    scopeMapping: [] as { divs: string[], parts: string[], wts: string[] }[],
+    tempMapDivs: [] as string[],
+    tempMapParts: [] as string[],
+    tempMapWTs: [] as string[],
+    
+    // 🟢 NEW: Track which rule is being edited (-1 or null means "New Mode")
+    editingRuleIndex: null as number | null 
   });
+
+  // 🔒 Safety Check: Is the builder currently "Dirty" (Active)?
+  // If true, we disable the main Save/Cancel buttons
+  const isBuilderActive = projForm.tempMapDivs.length > 0 || projForm.tempMapParts.length > 0 || projForm.tempMapWTs.length > 0;
   
   // NEW: HIERARCHY STATE FOR ALLOCATION
   const [allocScope, setAllocScope] = useState<ScopeItem[]>([]); 
@@ -69,6 +82,28 @@ const PMDashboard: React.FC<PMDashboardProps> = ({ store, currentView }) => {
   // HELPER FUNCTIONS
   // ----------------------------------------------------------------------
 
+  // 🔒 Helper: Check if a Scope Rule is already allocated
+  const isRuleInUse = (rule: any) => {
+      if (!editingProjectId) return false; // New projects are safe
+      
+      // Get all active assignments for this project
+      const projectGas = state.groupAssignments.filter((ga: GroupAssignment) => ga.projectId === editingProjectId);
+      if (projectGas.length === 0) return false;
+
+      // Check if ANY combination in this rule is already in a GroupAssignment
+      return rule.divs.some((d: string) => 
+          rule.parts.some((p: string) => 
+              rule.wts.some((w: string) => 
+                  projectGas.some(ga => 
+                      ga.scope.some(s => 
+                          s.division === d && 
+                          s.parts.some(pt => pt.name === p && pt.workTypes.includes(w))
+                      )
+                  )
+              )
+          )
+      );
+  };
   const getScopeStatusColor = (gaId: number, div: string, part: string, wt: string) => {
       // Find all allocations by the Team Lead for this specific Group Assignment
       const memberAssigns = state.memberAssignments.filter((ma: MemberAssignment) => 
@@ -286,13 +321,23 @@ const PMDashboard: React.FC<PMDashboardProps> = ({ store, currentView }) => {
 
   const handleProjectSubmit = async (e: React.FormEvent) => {
       e.preventDefault();
-      // FIX: Send flat lists directly to DB (Hybrid Model)
+      
+      // 🛡️ BARRIER: Prevent saving if the builder is still active
+      if (isBuilderActive) {
+          alert("⚠️ UNFINISHED RULE\n\nYou have an active scope rule being edited (Selection boxes are not empty).\n\nPlease click 'Add/Update Rule' to commit it, or 'Undo' to clear it before saving the project.");
+          return;
+      }
+
       const payload = { 
           name: projForm.name, 
           date: projForm.date, 
           divisions: projForm.divisions, 
           partNos: projForm.partNos,
-          workTypes: projForm.workTypes
+          workTypes: projForm.workTypes,
+          
+          // 🟢 CRITICAL FIX: Always send a string, never null. 
+          // If empty, this sends "[]", which correctly wipes the DB column.
+          scopeStructure: JSON.stringify(projForm.scopeMapping) 
       };
 
       if (editingProjectId) await updateProject(editingProjectId, payload);
@@ -300,18 +345,122 @@ const PMDashboard: React.FC<PMDashboardProps> = ({ store, currentView }) => {
       
       setShowAddProject(false); 
       setEditingProjectId(null); 
-      setProjForm({ name: '', date: '', divisions: [], partNos: [], workTypes: [], newDivPrefix: '', newDivCount: '', newDivStart: '1', newPartPrefix: '', newPartCount: '', newPartStart: '1', manualDiv: '', manualPart: '' });
+      setProjForm({ 
+          name: '', date: '', divisions: [], partNos: [], workTypes: [], 
+          newDivPrefix: '', newDivCount: '', newDivStart: '1', 
+          newPartPrefix: '', newPartCount: '', newPartStart: '1', 
+          manualDiv: '', manualPart: '',
+          scopeMapping: [], tempMapDivs: [], tempMapParts: [], tempMapWTs: [],
+          editingRuleIndex: null 
+      });
   };
 
   // --- TREE & STATUS LOGIC ---
   const getVirtualScope = (p: Project | null) => {
       if (!p || !p.divisions) return [];
+
+      // 1. ADVANCED MODE: Check if rules exist and are not empty
+      if (p.scopeStructure && p.scopeStructure !== "[]") {
+          try {
+              const rules = JSON.parse(p.scopeStructure);
+              if (rules.length > 0) {
+                  const tree: ScopeItem[] = [];
+
+                  rules.forEach((rule: any) => {
+                      rule.divs.forEach((div: string) => {
+                          let divItem = tree.find(t => t.division === div);
+                          if (!divItem) {
+                              divItem = { division: div, parts: [] };
+                              tree.push(divItem);
+                          }
+
+                          rule.parts.forEach((part: string) => {
+                              let partItem = divItem!.parts.find((pt: any) => pt.name === part);
+                              if (!partItem) {
+                                  partItem = { name: part, workTypes: [] };
+                                  divItem!.parts.push(partItem);
+                              }
+                              // Add unique Work Types from this rule
+                              rule.wts.forEach((wt: string) => {
+                                  if (!partItem!.workTypes.includes(wt)) {
+                                      partItem!.workTypes.push(wt);
+                                  }
+                              });
+                          });
+                      });
+                  });
+                  return tree;
+              }
+          } catch (e) {
+              console.error("Failed to parse scope structure", e);
+          }
+      }
+
+      // 2. SIMPLE MODE (Fallback): All-to-All
       return p.divisions.map(div => ({
           division: div,
           parts: (p.partNos || []).map(part => ({ name: part, workTypes: [...(p.workTypes || [])] }))
       }));
   };
+  // 🔍 Helper: Check the status of a specific Scope Combination
+  const getScopeStatus = (d: string, p: string, w: string) => {
+      if (!editingProjectId) return null;
+      
+      // Find assignments for this project that contain this exact D/P/W combo
+      const activeGA = state.groupAssignments.find((ga: GroupAssignment) => 
+          ga.projectId === editingProjectId &&
+          ga.scope.some(s => 
+              s.division === d && 
+              s.parts.some(pt => pt.name === p && pt.workTypes.includes(w))
+          )
+      );
 
+      if (!activeGA) return null;
+      return activeGA.status === 'COMPLETED' ? 'COMPLETED' : 'ALLOCATED';
+  };
+
+  // 🔒 Helper: Determine if a builder item (Div/Part/WT) should be locked
+  const getItemLockStatus = (type: 'div' | 'part' | 'wt', item: string) => {
+      // We check if this item, combined with the CURRENT temporary selections, forms a locked scope.
+      const { tempMapDivs, tempMapParts, tempMapWTs } = projForm;
+      
+      let hasAllocated = false;
+      let hasCompleted = false;
+
+      if (type === 'div') {
+          // Check this Div against all selected Parts & WTs
+          for (const p of tempMapParts) {
+              for (const w of tempMapWTs) {
+                  const status = getScopeStatus(item, p, w);
+                  if (status === 'ALLOCATED') hasAllocated = true;
+                  if (status === 'COMPLETED') hasCompleted = true;
+              }
+          }
+      } else if (type === 'part') {
+          // Check this Part against all selected Divs & WTs
+          for (const d of tempMapDivs) {
+              for (const w of tempMapWTs) {
+                  const status = getScopeStatus(d, item, w);
+                  if (status === 'ALLOCATED') hasAllocated = true;
+                  if (status === 'COMPLETED') hasCompleted = true;
+              }
+          }
+      } else if (type === 'wt') {
+          // Check this WT against all selected Divs & Parts
+          for (const d of tempMapDivs) {
+              for (const p of tempMapParts) {
+                  const status = getScopeStatus(d, p, item);
+                  if (status === 'ALLOCATED') hasAllocated = true;
+                  if (status === 'COMPLETED') hasCompleted = true;
+              }
+          }
+      }
+
+      // Priority: Allocated (Yellow) > Completed (Green) > Null (Editable)
+      if (hasAllocated) return 'ALLOCATED';
+      if (hasCompleted) return 'COMPLETED';
+      return null;
+  };
   const getStatusColor = (p: Project, div: string, part: string, wt: string) => {
       const assigns = state.groupAssignments.filter((ga: GroupAssignment) => 
           ga.projectId === p.id && 
@@ -351,18 +500,38 @@ const PMDashboard: React.FC<PMDashboardProps> = ({ store, currentView }) => {
   };
   
   const openProjectEdit = (p: Project) => {
-      setEditingProjectId(p.id);
-      // Load flat lists directly from the project
-      setProjForm({ 
-          ...projForm, 
-          name: p.name, 
-          date: p.date,
-          divisions: p.divisions || [],
-          partNos: p.partNos || [],
-          workTypes: p.workTypes || []
-      });
-      setShowAddProject(true);
-  };
+    setEditingProjectId(p.id);
+
+    // Safe Parse Scope
+    let existingMapping = [];
+    try {
+        if (p.scopeStructure) existingMapping = JSON.parse(p.scopeStructure);
+    } catch (e) { console.error("Failed to parse scope structure", e); }
+
+    setProjForm({ 
+        name: p.name, 
+        
+        // Ensure we only grab the YYYY-MM-DD part
+        date: p.date ? p.date.split('T')[0] : '', 
+        
+        divisions: p.divisions || [],
+        partNos: p.partNos || [],
+        workTypes: p.workTypes || [],
+
+        // Reset Generators
+        newDivPrefix: '', newDivCount: '', newDivStart: '1', 
+        newPartPrefix: '', newPartCount: '', newPartStart: '1', 
+        manualDiv: '', manualPart: '',
+
+        // Load Mapping & Reset Builder State
+        scopeMapping: existingMapping,
+        tempMapDivs: [], 
+        tempMapParts: [], 
+        tempMapWTs: [],
+        editingRuleIndex: null // 🟢 NEW: Ensure we start in "Add Mode", not "Edit Mode"
+    });
+    setShowAddProject(true);
+};
 
   const openEditAlloc = (ga: GroupAssignment) => {
       setAllocForm({
@@ -382,38 +551,59 @@ const PMDashboard: React.FC<PMDashboardProps> = ({ store, currentView }) => {
   return (
     <div className="space-y-6 animate-fadeIn">
       {/* ----------------- TOP BAR ----------------- */}
-      <div className="flex flex-col md:flex-row justify-between items-center gap-4 bg-white p-4 rounded-2xl shadow-sm border border-slate-100">
-        <div className="flex items-center gap-4">
-             <h2 className="text-lg font-black text-slate-900 uppercase tracking-wide">Project Management</h2>
-             <div className="flex bg-slate-100 p-1 rounded-lg">
-                 {['ongoing', 'recent', 'completed', 'hold'].map(t => (
-                     <button key={t} onClick={()=>{setFilterTab(t); setActiveProjectId(null);}} className={`px-4 py-1.5 rounded-md text-[10px] font-black uppercase transition-all ${filterTab === t ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>{t}</button>
-                 ))}
-             </div>
-         </div>
-        <div className="relative">
-            <i className="fas fa-search absolute left-3 top-3 text-slate-400 text-xs"></i>
-            <input placeholder="Search..." className="pl-9 pr-4 py-2 border border-slate-200 rounded-xl text-xs font-bold w-64 outline-none focus:ring-2 focus:ring-indigo-500" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
+      <div className="flex flex-col md:flex-row justify-between items-stretch md:items-center gap-4 bg-white p-4 rounded-2xl shadow-sm border border-slate-100">
+        <div className="flex flex-col md:flex-row items-start md:items-center gap-4 w-full md:w-auto">
+            <h2 className="text-lg font-black text-slate-900 uppercase tracking-wide shrink-0">Project Management</h2>
+            {/* Tabs: Horizontal scroll on mobile */}
+            <div className="flex bg-slate-100 p-1 rounded-lg w-full md:w-auto overflow-x-auto">
+                {['ongoing', 'recent', 'completed', 'hold'].map(t => (
+                    <button key={t} onClick={()=>{setFilterTab(t); setActiveProjectId(null);}} className={`flex-1 md:flex-none px-4 py-1.5 rounded-md text-[10px] font-black uppercase transition-all whitespace-nowrap ${filterTab === t ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>{t}</button>
+                ))}
+            </div>
+        </div>
+        <div className="relative w-full md:w-auto">
+            <i className="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
+            <input placeholder="Search..." className="pl-9 pr-4 py-2 border border-slate-200 rounded-xl text-xs font-bold w-full md:w-64 outline-none focus:ring-2 focus:ring-indigo-500" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
         </div>
       </div>
 
       <div className="grid lg:grid-cols-12 gap-6">
       {/* ----------------- LEFT: PROJECT LIST ----------------- */}
-         <div className="lg:col-span-4 bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col max-h-[75vh]">
+         {/* Mobile: Hidden if project selected. Desktop: Always visible (col-span-4) */}
+         <div className={`${activeProjectId ? 'hidden lg:flex' : 'flex'} lg:col-span-4 bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex-col max-h-[75vh]`}>
              
              {/* 1. NEW PROJECT BUTTON (Moved to Top & Sticky) */}
-             <div className="p-4 border-b bg-slate-50 z-10 sticky top-0">
-                 <button 
-                     onClick={() => {
-                         setEditingProjectId(null); 
-                         setProjForm({ name: '', date: new Date().toISOString().split('T')[0], divisions: [], partNos: [], workTypes: [], newDivPrefix: '', newDivCount: '', newDivStart: '1', newPartPrefix: '', newPartCount: '', newPartStart: '1', manualDiv: '', manualPart: '' }); 
-                         setShowAddProject(true);
-                     }} 
-                     className="w-full py-3 bg-indigo-600 text-white rounded-xl text-xs font-bold shadow-md hover:bg-indigo-700 transition-colors"
-                 >
-                     + New Project
-                 </button>
-             </div>
+            <div className="p-4 border-b bg-slate-50 z-10 sticky top-0">
+                <button 
+                    onClick={() => {
+                        setEditingProjectId(null); 
+                        const today = getLocalISOString().split('T')[0];
+
+                        setProjForm({ 
+                            name: '', 
+                            date: today, 
+                            divisions: [], 
+                            partNos: [], 
+                            workTypes: [], 
+                            newDivPrefix: '', newDivCount: '', newDivStart: '1', 
+                            newPartPrefix: '', newPartCount: '', newPartStart: '1', 
+                            manualDiv: '', manualPart: '',
+                            
+                            scopeMapping: [], 
+                            tempMapDivs: [], 
+                            tempMapParts: [], 
+                            tempMapWTs: [],
+                            
+                            // 🟢 NEW: Reset the rule editor state
+                            editingRuleIndex: null 
+                        });
+                        setShowAddProject(true);
+                    }} 
+                    className="w-full py-3 bg-indigo-600 text-white rounded-xl text-xs font-bold shadow-md hover:bg-indigo-700 transition-colors"
+                >
+                    + New Project
+                </button>
+            </div>
 
              {/* 2. PROJECT LIST (Scrollable Area) */}
              <div className="overflow-y-auto flex-1">
@@ -459,14 +649,26 @@ const PMDashboard: React.FC<PMDashboardProps> = ({ store, currentView }) => {
          </div>
 
          {/* ----------------- RIGHT: DETAILS ----------------- */}
-        <div className="lg:col-span-8 bg-white rounded-2xl shadow-sm border border-slate-200 p-6 min-h-[500px]">
+        {/* Mobile: Hidden if NO project selected. Desktop: Always visible (col-span-8) */}
+        <div className={`${!activeProjectId ? 'hidden lg:block' : 'block'} lg:col-span-8 bg-white rounded-2xl shadow-sm border border-slate-200 p-6 min-h-[500px]`}>
             {activeProject ? (
                 <>
-                    <div className="flex justify-between items-start mb-6 border-b border-slate-100 pb-4">
-                        <h2 className="text-2xl font-black text-slate-900">{activeProject.name}</h2>
+                    <div className="flex flex-col md:flex-row justify-between items-start mb-6 border-b border-slate-100 pb-4 gap-4">
+                        <div className="flex items-center gap-3">
+                            {/* Mobile Back Button */}
+                            <button onClick={() => setActiveProjectId(null)} className="lg:hidden text-slate-400 hover:text-slate-600">
+                                <i className="fas fa-arrow-left text-xl"></i>
+                            </button>
+                            <h2 className="text-xl md:text-2xl font-black text-slate-900">{activeProject.name}</h2>
+                        </div>
+
                         <div className="flex gap-2">
-                            <button onClick={() => { setEditingProjectId(activeProject.id); setProjForm(activeProject as any); setShowAddProject(true); }} className="bg-slate-100 px-3 py-1.5 rounded-lg text-xs font-bold">Edit</button>
-                            
+                            <button 
+                                onClick={() => openProjectEdit(activeProject)} 
+                                className="bg-slate-100 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-slate-200 transition-colors"
+                            >
+                                Edit
+                            </button>
                             {/* FIX: Send an Object { status: ... }, NOT a boolean */}
                             <button 
                                 onClick={() => updateProject(activeProject.id, { status: activeProject.status === 'ON_HOLD' ? 'ACTIVE' : 'ON_HOLD' })} 
@@ -523,27 +725,30 @@ const PMDashboard: React.FC<PMDashboardProps> = ({ store, currentView }) => {
 
                      <div className="flex justify-between items-center mb-4 mt-8 pt-6 border-t border-slate-100">
                          <h3 className="font-bold text-slate-800">Team Allocations</h3>
-                         <button 
-    onClick={() => { 
-        setEditId(null); // Clear Edit Mode
-        setAllocScope([]); 
-        
-        // 🧠 SMART RESET: Auto-select the current project if one is active
-        setAllocForm({ 
-            projectId: activeProjectId ? activeProjectId.toString() : '', 
-            teamId: '', 
-            fileSize: '', 
-            eta: '', 
-            assignedTime: getLocalISOString()
-        }); 
-        
-        setShowDeploy(true); 
-    }} 
-    className="bg-slate-900 text-white px-4 py-2 rounded-xl text-xs font-bold shadow-lg shadow-slate-200 hover:bg-slate-800 transition-all flex items-center"
->
-    <i className="fas fa-plus mr-2"></i>
-    Deploy Work
-</button>
+                         {/* Find the main "Deploy Work" button and replace it */}
+                        <button 
+                            onClick={() => { 
+                                setEditId(null); 
+                                setAllocScope([]); 
+                                
+                                // 🟢 FIX: Generate FRESH time right now
+                                const nowTime = getLocalISOString(); 
+                                
+                                setAllocForm({ 
+                                    projectId: activeProjectId ? activeProjectId.toString() : '', 
+                                    teamId: '', 
+                                    fileSize: '', 
+                                    eta: '', 
+                                    assignedTime: nowTime // 🟢 Applies correctly
+                                }); 
+                                
+                                setShowDeploy(true); 
+                            }} 
+                            className="bg-slate-900 text-white px-4 py-2 rounded-xl text-xs font-bold shadow-lg shadow-slate-200 hover:bg-slate-800 transition-all flex items-center"
+                        >
+                            <i className="fas fa-plus mr-2"></i>
+                            Deploy Work
+                        </button>
                      </div>
 
                      {/* TEAM ALLOCATIONS LIST (SCROLLABLE) */}
@@ -676,154 +881,337 @@ const PMDashboard: React.FC<PMDashboardProps> = ({ store, currentView }) => {
              ) : <div className="text-center text-slate-400 mt-20">Select a project</div>}
          </div>
       </div>
-      {/* ----------------- MODALS ----------------- */}
 
-      {/* CREATE / EDIT PROJECT MODAL (Uses Original Layout) */}
+      {/* ----------------- MODALS ----------------- */}
+      {/* ADD / EDIT PROJECT MODAL - V3 (Undo/Update Logic) */}
       {showAddProject && (
           <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fadeIn">
-             <div className="bg-white rounded-3xl p-8 max-w-lg w-full max-h-[90vh] overflow-y-auto shadow-2xl">
-                <h2 className="text-2xl font-black mb-6 text-slate-900">{editingProjectId ? 'Edit Project' : 'New Project'}</h2>
-                <form onSubmit={handleProjectSubmit} className="space-y-5">
-                   <div className="space-y-1">
-                       <label className="text-[10px] font-black uppercase text-slate-400">Project Name</label>
-                       <input required className="w-full border-2 border-slate-100 p-3 rounded-xl font-bold focus:border-indigo-500 outline-none" value={projForm.name} onChange={e=>setProjForm({...projForm, name: e.target.value})} />
-                   </div>
-                   <div className="space-y-1">
-                       <label className="text-[10px] font-black uppercase text-slate-400">Date</label>
-                       <input type="date" required className="w-full border-2 border-slate-100 p-3 rounded-xl font-bold focus:border-indigo-500 outline-none" value={projForm.date} onChange={e=>setProjForm({...projForm, date: e.target.value})} />
-                   </div>
-                   
-                   {/* DIVISIONS MANAGER */}
-                   <div className="bg-slate-50 p-5 rounded-2xl border border-slate-100 space-y-4">
-                      <div className="flex justify-between items-center">
-                          <p className="text-xs font-black uppercase text-slate-500">Divisions</p>
-                          <span className="text-[10px] font-bold bg-white px-2 py-1 rounded text-slate-400">{projForm.divisions.length} Added</span>
-                      </div>
-                      <div className="flex flex-wrap gap-2 min-h-[40px]">
-                          {projForm.divisions.map(d => (
-                              <span key={d} className="flex items-center gap-1 bg-white border border-slate-200 px-3 py-1.5 rounded-lg text-[10px] font-bold text-slate-700 shadow-sm">
-                                  {d}
-                                  <button type="button" onClick={() => removeDiv(d)} className="text-slate-300 hover:text-red-500 ml-1"><i className="fas fa-times"></i></button>
-                              </span>
-                          ))}
-                      </div>
-                      <div className="grid grid-cols-4 gap-2">
-                          <input placeholder="Prefix" className="col-span-1 border p-2 rounded-lg text-xs font-bold" value={projForm.newDivPrefix} onChange={e=>setProjForm({...projForm, newDivPrefix: e.target.value})} />
-                          <input placeholder="Start #" type="number" className="col-span-1 border p-2 rounded-lg text-xs font-bold" value={projForm.newDivStart} onChange={e=>setProjForm({...projForm, newDivStart: e.target.value})} />
-                          <input placeholder="Qty" type="number" className="col-span-1 border p-2 rounded-lg text-xs font-bold" value={projForm.newDivCount} onChange={e=>setProjForm({...projForm, newDivCount: e.target.value})} />
-                          <button type="button" onClick={addGeneratedDivs} className="col-span-1 bg-slate-900 text-white rounded-lg text-xs font-bold hover:bg-slate-700">Generate</button>
-                      </div>
-                      <div className="flex gap-2">
-                          <input placeholder="Or add specific name (e.g. Lobby)" className="flex-grow border p-2 rounded-lg text-xs font-bold" value={projForm.manualDiv} onChange={e=>setProjForm({...projForm, manualDiv: e.target.value})} />
-                          <button type="button" onClick={addManualDiv} className="bg-white border border-slate-300 text-slate-700 px-4 rounded-lg text-xs font-bold hover:bg-slate-50">Add</button>
-                      </div>
-                   </div>
+             <div className="bg-white rounded-3xl w-full max-w-7xl h-[90vh] shadow-2xl flex flex-col overflow-hidden">
+                
+                {/* HEADER */}
+                <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+                    <h2 className="text-xl font-black text-slate-900">{editingProjectId ? 'Edit Project' : 'New Project'}</h2>
+                    {/* Close X only works if not busy */}
+                    <button 
+                        disabled={isBuilderActive}
+                        onClick={() => setShowAddProject(false)} 
+                        className={`text-xl font-bold px-2 ${isBuilderActive ? 'text-slate-300 cursor-not-allowed' : 'text-slate-400 hover:text-slate-600'}`}
+                    >
+                        ✕
+                    </button>
+                </div>
 
-                   {/* PARTS MANAGER */}
-                   <div className="bg-slate-50 p-5 rounded-2xl border border-slate-100 space-y-4">
-                      <div className="flex justify-between items-center">
-                          <p className="text-xs font-black uppercase text-slate-500">Parts</p>
-                          <span className="text-[10px] font-bold bg-white px-2 py-1 rounded text-slate-400">{projForm.partNos.length} Added</span>
-                      </div>
-                      <div className="flex flex-wrap gap-2 min-h-[40px]">
-                          {projForm.partNos.map(p => (
-                              <span key={p} className="flex items-center gap-1 bg-white border border-slate-200 px-3 py-1.5 rounded-lg text-[10px] font-bold text-slate-700 shadow-sm">
-                                  {p}
-                                  <button type="button" onClick={() => removePart(p)} className="text-slate-300 hover:text-red-500 ml-1"><i className="fas fa-times"></i></button>
-                              </span>
-                          ))}
-                      </div>
-                      <div className="grid grid-cols-4 gap-2">
-                          <input placeholder="Prefix" className="col-span-1 border p-2 rounded-lg text-xs font-bold" value={projForm.newPartPrefix} onChange={e=>setProjForm({...projForm, newPartPrefix: e.target.value})} />
-                          <input placeholder="Start #" type="number" className="col-span-1 border p-2 rounded-lg text-xs font-bold" value={projForm.newPartStart} onChange={e=>setProjForm({...projForm, newPartStart: e.target.value})} />
-                          <input placeholder="Qty" type="number" className="col-span-1 border p-2 rounded-lg text-xs font-bold" value={projForm.newPartCount} onChange={e=>setProjForm({...projForm, newPartCount: e.target.value})} />
-                          <button type="button" onClick={addGeneratedParts} className="col-span-1 bg-slate-900 text-white rounded-lg text-xs font-bold hover:bg-slate-700">Generate</button>
-                      </div>
-                      <div className="flex gap-2">
-                          <input placeholder="Or add specific name (e.g. Wall A)" className="flex-grow border p-2 rounded-lg text-xs font-bold" value={projForm.manualPart} onChange={e=>setProjForm({...projForm, manualPart: e.target.value})} />
-                          <button type="button" onClick={addManualPart} className="bg-white border border-slate-300 text-slate-700 px-4 rounded-lg text-xs font-bold hover:bg-slate-50">Add</button>
-                      </div>
-                   </div>
+                {/* CONTENT AREA */}
+                <div className="flex-1 overflow-hidden flex flex-row">
+                    
+                    {/* === LEFT COLUMN (Definitions) === */}
+                    <div className="w-1/3 flex-shrink-0 flex flex-col border-r border-slate-100 bg-white min-w-[350px]">
+                        <form id="projectForm" onSubmit={handleProjectSubmit} className="flex-1 overflow-y-auto custom-scrollbar p-6 space-y-6">
+                           
+                           {/* Basic Info */}
+                           <div className="space-y-4">
+                               <div className="space-y-1">
+                                   <label className="text-[10px] font-black uppercase text-slate-400">Project Name</label>
+                                   <input required className="w-full border-2 border-slate-100 p-3 rounded-xl font-bold text-sm text-slate-700 focus:border-indigo-500 outline-none" value={projForm.name} onChange={e=>setProjForm({...projForm, name: e.target.value})} />
+                               </div>
+                               <div className="space-y-1">
+                                   <label className="text-[10px] font-black uppercase text-slate-400">Date</label>
+                                   <input type="date" required className="w-full border-2 border-slate-100 p-3 rounded-xl font-bold text-sm text-slate-700 focus:border-indigo-500 outline-none" value={projForm.date} onChange={e=>setProjForm({...projForm, date: e.target.value})} />
+                               </div>
+                           </div>
+                           
+                           {/* DIVISIONS */}
+                           <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 space-y-3">
+                              <div className="flex justify-between items-center"><p className="text-xs font-black uppercase text-slate-500">Divisions</p><span className="text-[10px] font-bold bg-white px-2 py-0.5 rounded text-slate-400 border border-slate-100">{projForm.divisions.length}</span></div>
+                              <div className="flex gap-2">
+                                  <input className="w-14 p-2 text-[10px] border rounded-lg font-bold text-center" placeholder="Pre" value={projForm.newDivPrefix} onChange={e=>setProjForm({...projForm, newDivPrefix: e.target.value})} />
+                                  <input className="w-14 p-2 text-[10px] border rounded-lg font-bold text-center" placeholder="Start" value={projForm.newDivStart} onChange={e=>setProjForm({...projForm, newDivStart: e.target.value})} />
+                                  <input className="w-14 p-2 text-[10px] border rounded-lg font-bold text-center" placeholder="Qty" value={projForm.newDivCount} onChange={e=>setProjForm({...projForm, newDivCount: e.target.value})} />
+                                  <button type="button" onClick={addGeneratedDivs} className="flex-1 bg-slate-800 text-white rounded-lg text-[10px] font-bold shadow-md hover:bg-slate-700">Generate</button>
+                              </div>
+                              <div className="flex gap-2">
+                                  <input className="flex-1 p-2 text-[10px] border rounded-lg font-bold" placeholder="Manual Add" value={projForm.manualDiv} onChange={e=>setProjForm({...projForm, manualDiv: e.target.value})} />
+                                  <button type="button" onClick={addManualDiv} className="bg-white border px-3 rounded-lg text-[10px] font-bold hover:bg-slate-50">+</button>
+                              </div>
+                              <div className="flex flex-wrap gap-1 max-h-32 overflow-y-auto">
+                                  {projForm.divisions.map(d => <span key={d} onClick={() => removeDiv(d)} className="cursor-pointer text-[10px] bg-white border border-slate-200 px-2 py-0.5 rounded-md font-bold text-slate-600 hover:bg-red-50 hover:text-red-500 hover:border-red-200">{d}</span>)}
+                              </div>
+                           </div>
 
-                   <div className="space-y-2">
-                        <label className="text-[10px] font-black uppercase text-slate-400">Required Work Types</label>
-                        <div className="flex flex-wrap gap-2">
-                            {state.workTypes.map((w: string) => (
-                                <button type="button" key={w} onClick={()=>setProjForm(prev => ({...prev, workTypes: toggleList(prev.workTypes, w)}))} className={`px-4 py-2 rounded-lg text-xs font-bold border transition-all ${projForm.workTypes.includes(w)?'bg-indigo-600 text-white border-indigo-600':'bg-white text-slate-500 border-slate-200'}`}>{w}</button>
-                            ))}
+                           {/* PARTS */}
+                           <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 space-y-3">
+                              <div className="flex justify-between items-center"><p className="text-xs font-black uppercase text-slate-500">Parts</p><span className="text-[10px] font-bold bg-white px-2 py-0.5 rounded text-slate-400 border border-slate-100">{projForm.partNos.length}</span></div>
+                              <div className="flex gap-2">
+                                  <input className="w-14 p-2 text-[10px] border rounded-lg font-bold text-center" placeholder="Pre" value={projForm.newPartPrefix} onChange={e=>setProjForm({...projForm, newPartPrefix: e.target.value})} />
+                                  <input className="w-14 p-2 text-[10px] border rounded-lg font-bold text-center" placeholder="Start" value={projForm.newPartStart} onChange={e=>setProjForm({...projForm, newPartStart: e.target.value})} />
+                                  <input className="w-14 p-2 text-[10px] border rounded-lg font-bold text-center" placeholder="Qty" value={projForm.newPartCount} onChange={e=>setProjForm({...projForm, newPartCount: e.target.value})} />
+                                  <button type="button" onClick={addGeneratedParts} className="flex-1 bg-slate-800 text-white rounded-lg text-[10px] font-bold shadow-md hover:bg-slate-700">Generate</button>
+                              </div>
+                              <div className="flex gap-2">
+                                  <input className="flex-1 p-2 text-[10px] border rounded-lg font-bold" placeholder="Manual Add" value={projForm.manualPart} onChange={e=>setProjForm({...projForm, manualPart: e.target.value})} />
+                                  <button type="button" onClick={addManualPart} className="bg-white border px-3 rounded-lg text-[10px] font-bold hover:bg-slate-50">+</button>
+                              </div>
+                              <div className="flex flex-wrap gap-1 max-h-32 overflow-y-auto">
+                                  {projForm.partNos.map(p => <span key={p} onClick={() => removePart(p)} className="cursor-pointer text-[10px] bg-white border border-slate-200 px-2 py-0.5 rounded-md font-bold text-slate-600 hover:bg-red-50 hover:text-red-500 hover:border-red-200">{p}</span>)}
+                              </div>
+                           </div>
+
+                           {/* WORK TYPES */}
+                           <div className="space-y-2">
+                                <label className="text-[10px] font-black uppercase text-slate-400">Required Work Types</label>
+                                <div className="flex flex-wrap gap-2">
+                                    {state.workTypes.map((w: string) => (
+                                        <button type="button" key={w} onClick={()=>setProjForm(prev => ({...prev, workTypes: toggleList(prev.workTypes, w)}))} className={`px-3 py-1.5 rounded-lg text-[10px] font-bold border transition-all ${projForm.workTypes.includes(w)?'bg-indigo-600 text-white border-indigo-600 shadow-md':'bg-white text-slate-500 border-slate-200 hover:border-indigo-300'}`}>{w}</button>
+                                    ))}
+                                </div>
+                           </div>
+                        </form>
+                    </div>
+
+                    {/* === RIGHT COLUMN (Scope Builder) === */}
+                    <div className="flex-1 bg-indigo-50/50 p-6 flex flex-col overflow-hidden w-2/3">
+                        
+                        {/* Builder Grid */}
+                        <div className="flex gap-4 items-stretch mb-4 h-52">
+                             {/* Selectors */}
+                            <div className="flex-1 grid grid-cols-3 gap-3 h-full">
+                                {/* 1. Div Selector */}
+                                <div className="bg-white border border-indigo-100 rounded-2xl p-3 flex flex-col shadow-sm">
+                                    <div className="flex justify-between mb-2 pb-1 border-b border-slate-50"><span className="text-[10px] font-black uppercase text-slate-400">1. Divisions</span><button type="button" onClick={() => setProjForm(prev => ({...prev, tempMapDivs: prev.tempMapDivs.length === prev.divisions.length ? [] : prev.divisions}))} className="text-[9px] text-indigo-600 font-bold hover:bg-indigo-50 px-2 rounded">ALL</button></div>
+                                    <div className="flex-1 overflow-y-auto custom-scrollbar space-y-1">
+                                        {projForm.divisions.map(d => {
+                                            const lockStatus = getItemLockStatus('div', d);
+                                            return (
+                                                <div key={d} onClick={() => !lockStatus && setProjForm(prev=>({...prev, tempMapDivs: toggleList(prev.tempMapDivs, d)}))} className={`text-[10px] px-2 py-1 rounded-lg font-bold border transition-all flex justify-between items-center ${lockStatus==='ALLOCATED'?'bg-amber-100 text-amber-800 border-amber-200 opacity-80':lockStatus==='COMPLETED'?'bg-green-100 text-green-800 border-green-200 opacity-80':projForm.tempMapDivs.includes(d)?'bg-indigo-600 text-white border-indigo-600 shadow-sm':'hover:bg-slate-50 text-slate-500 border-transparent'}`}>{d}{lockStatus && <i className="fas fa-lock text-[8px]"></i>}</div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                                {/* 2. Part Selector */}
+                                <div className="bg-white border border-indigo-100 rounded-2xl p-3 flex flex-col shadow-sm">
+                                    <div className="flex justify-between mb-2 pb-1 border-b border-slate-50"><span className="text-[10px] font-black uppercase text-slate-400">2. Parts</span><button type="button" onClick={() => setProjForm(prev => ({...prev, tempMapParts: prev.tempMapParts.length === prev.partNos.length ? [] : prev.partNos}))} className="text-[9px] text-indigo-600 font-bold hover:bg-indigo-50 px-2 rounded">ALL</button></div>
+                                    <div className="flex-1 overflow-y-auto custom-scrollbar space-y-1">
+                                        {projForm.partNos.map(p => {
+                                            const lockStatus = getItemLockStatus('part', p);
+                                            return (
+                                                <div key={p} onClick={() => !lockStatus && setProjForm(prev=>({...prev, tempMapParts: toggleList(prev.tempMapParts, p)}))} className={`text-[10px] px-2 py-1 rounded-lg font-bold border transition-all flex justify-between items-center ${lockStatus==='ALLOCATED'?'bg-amber-100 text-amber-800 border-amber-200 opacity-80':lockStatus==='COMPLETED'?'bg-green-100 text-green-800 border-green-200 opacity-80':projForm.tempMapParts.includes(p)?'bg-indigo-600 text-white border-indigo-600 shadow-sm':'hover:bg-slate-50 text-slate-500 border-transparent'}`}>{p}{lockStatus && <i className="fas fa-lock text-[8px]"></i>}</div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                                {/* 3. WT Selector */}
+                                <div className="bg-white border border-indigo-100 rounded-2xl p-3 flex flex-col shadow-sm">
+                                    <div className="flex justify-between mb-2 pb-1 border-b border-slate-50"><span className="text-[10px] font-black uppercase text-slate-400">3. Work Types</span><button type="button" onClick={() => setProjForm(prev => ({...prev, tempMapWTs: prev.tempMapWTs.length === prev.workTypes.length ? [] : prev.workTypes}))} className="text-[9px] text-indigo-600 font-bold hover:bg-indigo-50 px-2 rounded">ALL</button></div>
+                                    <div className="flex-1 overflow-y-auto custom-scrollbar space-y-1">
+                                        {projForm.workTypes.map(w => {
+                                            const lockStatus = getItemLockStatus('wt', w);
+                                            return (
+                                                <div key={w} onClick={() => !lockStatus && setProjForm(prev=>({...prev, tempMapWTs: toggleList(prev.tempMapWTs, w)}))} className={`text-[10px] px-2 py-1 rounded-lg font-bold border transition-all flex justify-between items-center ${lockStatus==='ALLOCATED'?'bg-amber-100 text-amber-800 border-amber-200 opacity-80':lockStatus==='COMPLETED'?'bg-green-100 text-green-800 border-green-200 opacity-80':projForm.tempMapWTs.includes(w)?'bg-indigo-600 text-white border-indigo-600 shadow-sm':'hover:bg-slate-50 text-slate-500 border-transparent'}`}>{w}{lockStatus && <i className="fas fa-lock text-[8px]"></i>}</div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            {/* Action Buttons (Add/Update & Undo) */}
+                            <div className="flex flex-col gap-2 w-24">
+                                {/* ADD / UPDATE BUTTON */}
+                                <button 
+                                    type="button" 
+                                    onClick={() => {
+                                        if(projForm.tempMapDivs.length === 0 || projForm.tempMapParts.length === 0 || projForm.tempMapWTs.length === 0) {
+                                            alert("Select at least one Division, Part, and Work Type.");
+                                            return;
+                                        }
+                                        const newRule = { divs: projForm.tempMapDivs, parts: projForm.tempMapParts, wts: projForm.tempMapWTs };
+                                        
+                                        if (projForm.editingRuleIndex !== null) {
+                                            // 🟢 UPDATE MODE: Replace existing rule
+                                            const updatedMapping = [...projForm.scopeMapping];
+                                            updatedMapping[projForm.editingRuleIndex] = newRule;
+                                            setProjForm(prev => ({
+                                                ...prev, scopeMapping: updatedMapping, 
+                                                tempMapDivs: [], tempMapParts: [], tempMapWTs: [], editingRuleIndex: null
+                                            }));
+                                        } else {
+                                            // 🟢 ADD MODE: Append new rule
+                                            setProjForm(prev => ({
+                                                ...prev, scopeMapping: [...prev.scopeMapping, newRule], 
+                                                tempMapDivs: [], tempMapParts: [], tempMapWTs: [], editingRuleIndex: null
+                                            }));
+                                        }
+                                    }}
+                                    className={`flex-1 rounded-2xl flex flex-col items-center justify-center font-black transition-transform hover:scale-[1.02] active:scale-95 text-white shadow-lg ${projForm.editingRuleIndex !== null ? 'bg-amber-500 hover:bg-amber-600 shadow-amber-200' : 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-200'}`}
+                                >
+                                    <span className={`text-2xl mb-1 ${projForm.editingRuleIndex !== null ? 'rotate-0' : ''}`}>{projForm.editingRuleIndex !== null ? '↻' : '+'}</span>
+                                    <span className="text-[9px] uppercase font-bold tracking-wider">{projForm.editingRuleIndex !== null ? 'Update' : 'Add'}</span>
+                                </button>
+
+                                {/* UNDO BUTTON */}
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setProjForm(prev => ({
+                                            ...prev, 
+                                            tempMapDivs: [], tempMapParts: [], tempMapWTs: [], editingRuleIndex: null
+                                        }));
+                                    }}
+                                    className="h-12 bg-white border-2 border-slate-200 text-slate-400 hover:text-slate-600 hover:border-slate-400 rounded-xl flex flex-col items-center justify-center font-bold text-[9px] uppercase transition-colors"
+                                    title="Clear Selection / Cancel Edit"
+                                >
+                                    <i className="fas fa-undo mb-0.5"></i> Undo
+                                </button>
+                            </div>
                         </div>
-                   </div>
-                   
-                   <div className="flex gap-3 pt-4">
-                       <button type="submit" className="flex-1 bg-indigo-600 text-white py-3 rounded-xl font-black uppercase shadow-lg hover:bg-indigo-700 transition-colors">{editingProjectId ? 'Save Changes' : 'Create Project'}</button>
-                       <button 
-                            onClick={() => { 
-                                setShowDeploy(false); 
-                                setEditId(null); // 🟢 Clear edit mode on cancel too
-                                setAllocScope([]);
-                            }} 
-                            className="px-4 py-2 rounded-lg font-bold text-slate-500 hover:bg-slate-100 transition-colors"
-                        >
-                            Cancel
-                        </button>
-                   </div>
-                </form>
+
+                        {/* Rules List Header */}
+                        <div className="flex justify-between items-end mb-3 pb-2 border-b border-indigo-200">
+                             <div>
+                                <h3 className="font-black text-indigo-900 uppercase text-sm">Active Rules</h3>
+                                <p className="text-[10px] text-indigo-500">
+                                    {projForm.scopeMapping.length === 0 
+                                        ? "List is empty. Project will use 'All-to-All' logic automatically." 
+                                        : "Specific rules are active. 'All-to-All' logic is disabled."}
+                                </p>
+                             </div>
+                             <span className="text-[10px] font-bold bg-white text-indigo-600 px-3 py-1 rounded-full shadow-sm ring-1 ring-indigo-100">{projForm.scopeMapping.length} Rules</span>
+                        </div>
+
+                        {/* RULES LIST AREA */}
+                        <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 space-y-3">
+                             {projForm.scopeMapping.length === 0 && (
+                                 <div className="h-full flex flex-col items-center justify-center text-slate-400 opacity-60">
+                                     <i className="fas fa-layer-group text-5xl mb-4 text-indigo-200"></i>
+                                     <p className="text-sm font-bold text-slate-500">Default Mode: All-to-All</p>
+                                     <p className="text-xs">Every Division gets every Part & Work Type.</p>
+                                 </div>
+                             )}
+
+                             {projForm.scopeMapping.map((rule, idx) => {
+                                 const isLocked = isRuleInUse(rule); 
+                                 // Highlight if currently editing this specific rule
+                                 const isEditing = projForm.editingRuleIndex === idx;
+
+                                 return (
+                                     <div key={idx} className={`bg-white p-4 rounded-2xl border-l-[6px] shadow-sm flex gap-4 items-center group transition-all ${isEditing ? 'border-l-amber-500 ring-2 ring-amber-100 bg-amber-50' : isLocked ? 'border-l-slate-400 bg-slate-50/50' : 'border-l-indigo-500 hover:shadow-md'}`}>
+                                         <div className="flex-1 grid grid-cols-3 gap-6 text-xs">
+                                             <div><span className="text-[9px] font-bold text-slate-400 uppercase block mb-1">Divisions</span><span className="font-bold text-slate-700 leading-relaxed">{rule.divs.join(', ')}</span></div>
+                                             <div><span className="text-[9px] font-bold text-slate-400 uppercase block mb-1">Parts</span><span className="font-bold text-slate-700 leading-relaxed">{rule.parts.join(', ')}</span></div>
+                                             <div><span className="text-[9px] font-bold text-slate-400 uppercase block mb-1">Work Types</span><span className="font-bold text-indigo-600 leading-relaxed">{rule.wts.join(', ')}</span></div>
+                                         </div>
+
+                                         <div className="flex gap-2 opacity-60 group-hover:opacity-100 transition-opacity">
+                                             {/* Edit Button */}
+                                             <button 
+                                                 type="button" 
+                                                 onClick={() => {
+                                                     // Load into temp state and set editing index
+                                                     setProjForm(prev => ({ 
+                                                         ...prev, 
+                                                         tempMapDivs: rule.divs, tempMapParts: rule.parts, tempMapWTs: rule.wts, 
+                                                         editingRuleIndex: idx 
+                                                     }));
+                                                 }} 
+                                                 className={`p-2.5 rounded-xl transition-colors ${isEditing ? 'bg-amber-500 text-white shadow-md' : 'bg-slate-50 hover:bg-indigo-100 text-indigo-600'}`}
+                                                 title="Edit Rule"
+                                             >
+                                                 <i className="fas fa-edit"></i>
+                                             </button>
+                                             
+                                             {/* Delete Button */}
+                                             <button 
+                                                 type="button" 
+                                                 disabled={isLocked || isEditing}
+                                                 onClick={() => {
+                                                     if(window.confirm("Are you sure you want to delete this scope rule?")) {
+                                                         setProjForm(prev => ({...prev, scopeMapping: prev.scopeMapping.filter((_, i) => i !== idx)}));
+                                                     }
+                                                 }} 
+                                                 className={`p-2.5 rounded-xl transition-colors ${isLocked || isEditing ? 'bg-slate-100 text-slate-300 cursor-not-allowed' : 'bg-slate-50 hover:bg-red-100 text-red-500'}`}
+                                                 title={isLocked ? "Cannot delete: Work allocated" : "Delete Rule"}
+                                             >
+                                                 {isLocked ? <i className="fas fa-lock"></i> : <i className="fas fa-trash"></i>}
+                                             </button>
+                                         </div>
+                                     </div>
+                                 );
+                             })}
+                        </div>
+                    </div>
+                </div>
+
+                {/* FOOTER */}
+                <div className="p-4 border-t border-slate-100 bg-white flex justify-between items-center">
+                      <div className="text-[10px] text-slate-400 font-bold ml-2">
+                          {editingProjectId ? 'EDITING EXISTING PROJECT' : 'CREATING NEW PROJECT'}
+                      </div>
+                      <div className="flex gap-3">
+                          {/* Cancel DIV (Safe) */}
+                          {/* DISABLED if builder is active (user must Undo or Add first) */}
+                          <button 
+                             disabled={isBuilderActive}
+                             type="button"
+                             onClick={() => setShowAddProject(false)} 
+                             className={`px-8 py-3 rounded-xl font-bold text-xs uppercase tracking-wide border-2 ${isBuilderActive ? 'border-slate-100 text-slate-300 cursor-not-allowed' : 'border-slate-200 text-slate-500 hover:bg-slate-100'}`}
+                          >
+                              Cancel
+                          </button>
+                          
+                          {/* Submit Button */}
+                          {/* DISABLED if builder is active */}
+                          <button 
+                            disabled={isBuilderActive}
+                            type="submit" 
+                            form="projectForm" 
+                            className={`px-10 py-3 rounded-xl font-black text-xs uppercase tracking-wide shadow-lg transition-all transform ${isBuilderActive ? 'bg-slate-300 text-white shadow-none cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-indigo-200 active:scale-95'}`}
+                          >
+                              {editingProjectId ? 'Save Changes' : 'Create Project'}
+                          </button>
+                      </div>
+                </div>
+
              </div>
           </div>
       )}
 
-      {/* DEPLOY / REWORK MODAL (Hierarchical Selector) */}
+      {/* DEPLOY / REWORK MODAL */}
       {(showDeploy || showRework) && (
          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fadeIn">
             <div className={`bg-white rounded-3xl p-8 max-w-lg w-full shadow-2xl ${showRework ? 'border-t-4 border-red-500' : ''}`}>
                <h2 className="text-2xl font-black mb-6 text-slate-900">{showRework ? 'Rework Order' : editId ? 'Edit Allocation' : 'Deploy Team'}</h2>
-               <form onSubmit={showRework ? handleReworkSubmit : handleDeploySubmit} className="space-y-5">
+               
+               {/* 1. FORM STARTS HERE (Note the ID) */}
+               <form id="deployForm" onSubmit={showRework ? handleReworkSubmit : handleDeploySubmit} className="space-y-5">
                   <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-1">
                           <label className="text-[10px] font-black uppercase text-slate-400">Project</label>
                           <select required disabled={!!editId || showRework} className="w-full border-2 border-slate-100 p-3 rounded-xl font-bold bg-white" value={allocForm.projectId} onChange={e=>setAllocForm({...allocForm, projectId: e.target.value})}>
                               <option value="">Select...</option>
-                              {state.projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                              {state.projects.map((p: Project) => <option key={p.id} value={p.id}>{p.name}</option>)}
                           </select>
                       </div>
                       <div className="space-y-1">
                         <label className="text-[10px] font-black uppercase text-slate-400">Team</label>
                         <select 
                             required 
-                            // BARRIER: Lock if editing
                             disabled={!!editId}
                             className={`w-full border-2 p-3 rounded-xl font-bold ${editId ? 'bg-slate-100 text-slate-400 cursor-not-allowed border-slate-100' : 'bg-white border-slate-100'}`} 
                             value={allocForm.teamId} 
                             onChange={e=>setAllocForm({...allocForm, teamId: e.target.value})}
                         >
                             <option value="">Select...</option>
-                            {state.teams
-                                .sort((a: Team, b: Team) => {
-                                    const dateA = state.availability?.teams[a.id] || 0;
-                                    const dateB = state.availability?.teams[b.id] || 0;
-                                    if (dateA === 0 && dateB !== 0) return -1;
-                                    if (dateA !== 0 && dateB === 0) return 1;
-                                    return new Date(dateA).getTime() - new Date(dateB).getTime();
-                                })
-                                .map((t: Team) => (
-                                    <option key={t.id} value={t.id}>
-                                        {t.name} ({getAvailabilityLabel(t.id)})
-                                    </option>
-                                ))}
+                            {state.teams.map((t: Team) => (
+                                <option key={t.id} value={t.id}>{t.name} ({getAvailabilityLabel(t.id)})</option>
+                            ))}
                         </select>
-                        {editId && (
-                            <p className="text-[10px] text-amber-600 font-bold flex items-center gap-1">
-                                <i className="fas fa-lock"></i>
-                                Team is locked. To re-assign, delete this allocation and create a new one.
-                            </p>
-                        )}
+                        {editId && <p className="text-[10px] text-amber-600 font-bold"><i className="fas fa-lock"></i> Locked for editing</p>}
                     </div>
                   </div>
                   
+                  {/* Scope Selector */}
                   {allocForm.projectId && selectedDeployProject && (
                     <div className="p-4 rounded-xl border border-slate-100 bg-slate-50 max-h-60 overflow-y-auto custom-scrollbar">
                         <h3 className="font-bold text-xs uppercase mb-3 text-slate-500">Select Scope to Assign</h3>
-                        {/* Use getVirtualScope logic here */}
                         {getVirtualScope(selectedDeployProject).map((s: ScopeItem, idx: number) => (
                             <div key={idx} className="bg-white p-3 rounded-lg border border-slate-200 mb-2">
                                 <h4 className="font-black text-slate-800 text-xs mb-2">{s.division}</h4>
@@ -834,59 +1222,27 @@ const PMDashboard: React.FC<PMDashboardProps> = ({ store, currentView }) => {
                                             <div className="flex flex-wrap gap-1">
                                                 {p.workTypes.map((wt: string) => {
                                                     const isSelected = isAllocSelected(s.division, p.name, wt);
-
-                                                    // 1. STATUS CHECK: Look up this specific work item in existing assignments
                                                     const existingAssignment = state.groupAssignments.find((ga: GroupAssignment) =>
                                                         ga.projectId === selectedDeployProject.id &&
                                                         ga.scope.some((sc: ScopeItem) =>
                                                             sc.division === s.division &&
-                                                            sc.parts.some((pt: any) =>
-                                                                pt.name === p.name &&
-                                                                pt.workTypes.includes(wt)
-                                                            )
+                                                            sc.parts.some((pt: any) => pt.name === p.name && pt.workTypes.includes(wt))
                                                         )
                                                     );
-
                                                     const isCompleted = existingAssignment?.status === 'COMPLETED';
                                                     const isAllocated = existingAssignment && !isCompleted;
 
-                                                    // 2. DYNAMIC STYLING
-                                                    let buttonClass = "text-[9px] px-2 py-0.5 rounded border transition-all font-bold flex items-center gap-1 ";
-
-                                                    if (isSelected) {
-                                                        // === SELECTED STATE (Blue Fill) ===
-                                                        if (isCompleted) {
-                                                            // Blue Fill + Green Border (Reworking Completed)
-                                                            buttonClass += "bg-blue-600 text-white border-green-400 border-2 shadow-md scale-105";
-                                                        } else if (isAllocated) {
-                                                            // Blue Fill + Yellow Border (Re-assigning Allocated)
-                                                            buttonClass += "bg-blue-600 text-white border-yellow-400 border-2 shadow-md scale-105";
-                                                        } else {
-                                                            // Standard Selection
-                                                            buttonClass += "bg-indigo-600 text-white border-indigo-600";
-                                                        }
-                                                    } else {
-                                                        // === UNSELECTED STATE (Status Color) ===
-                                                        if (isCompleted) {
-                                                            buttonClass += "bg-green-100 text-green-700 border-green-200 hover:bg-green-200";
-                                                        } else if (isAllocated) {
-                                                            buttonClass += "bg-yellow-50 text-yellow-700 border-yellow-200 hover:bg-yellow-100";
-                                                        } else {
-                                                            buttonClass += "bg-white text-slate-400 border-slate-200 hover:border-slate-300 hover:text-slate-600";
-                                                        }
-                                                    }
+                                                    let buttonClass = "text-[9px] px-2 py-0.5 rounded border transition-all font-bold ";
+                                                    if (isSelected) buttonClass += isCompleted ? "bg-blue-600 text-white border-green-400 border-2" : isAllocated ? "bg-blue-600 text-white border-yellow-400 border-2" : "bg-indigo-600 text-white border-indigo-600";
+                                                    else buttonClass += isCompleted ? "bg-green-100 text-green-700 border-green-200" : isAllocated ? "bg-yellow-50 text-yellow-700 border-yellow-200" : "bg-white text-slate-400 border-slate-200";
 
                                                     return (
                                                         <button 
                                                             type="button" key={wt} 
                                                             onClick={() => toggleAllocScope(s.division, p.name, wt)}
                                                             className={buttonClass}
-                                                            title={isCompleted ? `Completed by ${state.teams.find((t:any)=>t.id===existingAssignment?.teamId)?.name}` : isAllocated ? `Allocated to ${state.teams.find((t:any)=>t.id===existingAssignment?.teamId)?.name}` : "Available"}
                                                         >
                                                             {wt}
-                                                            {/* Tiny Icons for Status Context */}
-                                                            {!isSelected && isCompleted && <i className="fas fa-check text-[8px]"></i>}
-                                                            {!isSelected && isAllocated && <i className="fas fa-user-clock text-[8px]"></i>}
                                                         </button>
                                                     );
                                                 })}
@@ -904,12 +1260,34 @@ const PMDashboard: React.FC<PMDashboardProps> = ({ store, currentView }) => {
                       <div className="space-y-1"><label className="text-[10px] font-black uppercase text-slate-400">ETA</label><input type="datetime-local" className="w-full border-2 border-slate-100 p-3 rounded-xl text-xs font-bold" value={allocForm.eta} onChange={e=>setAllocForm({...allocForm, eta: e.target.value})}/></div>
                   </div>
                   <input placeholder="File Size (e.g. 500MB)" className="w-full border-2 border-slate-100 p-3 rounded-xl font-bold text-sm" value={allocForm.fileSize} onChange={e=>setAllocForm({...allocForm, fileSize: e.target.value})} />
-                  
-                  <div className="flex gap-3 pt-4">
-                      <button className={`flex-1 text-white py-3 rounded-xl font-black uppercase shadow-lg transition-colors ${showRework ? 'bg-red-600 hover:bg-red-700' : 'bg-indigo-600 hover:bg-indigo-700'}`}>Confirm</button>
-                      <button type="button" onClick={()=>{setShowDeploy(false); setShowRework(false);}} className="flex-1 bg-white border border-slate-200 text-slate-500 py-3 rounded-xl font-black uppercase hover:bg-slate-50">Cancel</button>
-                  </div>
-               </form>
+               </form> 
+               {/* 2. FORM ENDS HERE. BUTTONS ARE OUTSIDE. */}
+
+               <div className="flex gap-3 pt-4">
+                  {/* Confirm Button - Uses form="deployForm" to link back to the form */}
+                  <button 
+                      type="submit" 
+                      form="deployForm" 
+                      className={`flex-1 text-white py-3 rounded-xl font-black uppercase shadow-lg transition-colors ${showRework ? 'bg-red-600 hover:bg-red-700' : 'bg-indigo-600 hover:bg-indigo-700'}`}
+                  >
+                      Confirm
+                  </button>
+
+                  {/* Cancel Button - Completely independent now */}
+                  <button 
+                      type="button" 
+                      onClick={(e) => {
+                          e.preventDefault(); 
+                          setShowDeploy(false); 
+                          setShowRework(false);
+                          setEditId(null);
+                          setAllocScope([]);
+                      }} 
+                      className="flex-1 bg-white border border-slate-200 text-slate-500 py-3 rounded-xl font-black uppercase hover:bg-slate-50"
+                  >
+                      Cancel
+                  </button>
+               </div>
             </div>
          </div>
       )}

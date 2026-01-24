@@ -7,7 +7,7 @@ interface AdminDashboardProps {
 }
 
 const AdminDashboard: React.FC<AdminDashboardProps> = ({ store, currentView }) => {
-  const { state, approveUser, createTeam, assignUserToTeam, addWorkType, removeWorkType, updateUser, deleteUser, updateConfig } = store;
+  const { state, approveUser, createTeam, assignUserToTeam, addWorkType, removeWorkType, updateWorkType, updateUser, deleteUser, updateConfig } = store;
   
   const [activeTab, setActiveTab] = useState<'staff' | 'teams' | 'config'>('staff');
   
@@ -15,6 +15,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ store, currentView }) =
   const [newWorkType, setNewWorkType] = useState('');
   const [editingTeam, setEditingTeam] = useState<Team | null>(null);
   const [editingUser, setEditingUser] = useState<User | null>(null);
+  const [showWorkTypeModal, setShowWorkTypeModal] = useState(false);
+  const [editingWorkType, setEditingWorkType] = useState<string | null>(null); 
+  const [editWorkTypeVal, setEditWorkTypeVal] = useState('');
   const [showAddUserModal, setShowAddUserModal] = useState(false);
   const [approvalRoles, setApprovalRoles] = useState<Record<number, UserRole[]>>({});
   
@@ -42,13 +45,79 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ store, currentView }) =
 
   // Handlers
   const handleCreateTeam = (e: React.FormEvent) => { e.preventDefault(); if (newTeamName.trim()) { createTeam(newTeamName); setNewTeamName(''); } };
-  const handleAddWorkType = (e: React.FormEvent) => { e.preventDefault(); if (newWorkType.trim()) { addWorkType(newWorkType.trim()); setNewWorkType(''); } };
+  const handleAddWorkType = async (e: React.FormEvent) => {
+      e.preventDefault();
+      if (!newWorkType.trim()) return;
+
+      if (state.workTypes.includes(newWorkType.trim())) {
+          alert("This Work Type already exists!");
+          return;
+      }
+
+      try {
+          await addWorkType(newWorkType.trim());
+          setNewWorkType(''); 
+      } catch (err: any) {
+          alert(err.message); 
+      }
+  };
+
+  const handleRemoveWorkType = async (type: string) => {
+      if (!window.confirm(`Are you sure you want to delete "${type}"?`)) return;
+
+      try {
+          await removeWorkType(type);
+      } catch (err: any) {
+          alert(err.message); // 🟢 Show Server Error (e.g., "Cannot delete: Used in Project X")
+      }
+  };
   const handleApprove = (user: User) => { const finalRoles = approvalRoles[user.id] || user.roles; approveUser(user.id, finalRoles); };
   const handleUpdateStaff = (e: React.FormEvent) => { e.preventDefault(); if (editingUser) { updateUser(editingUser.id, { name: editingUser.name, username: editingUser.username, password: editingUser.password, roles: editingUser.roles }); setEditingUser(null); } };
   const toggleApprovalRole = (userId: number, role: UserRole) => { const current = approvalRoles[userId] || state.users.find((u: User) => u.id === userId)?.roles || []; const updated = current.includes(role) ? current.filter(r => r !== role) : [...current, role]; setApprovalRoles({ ...approvalRoles, [userId]: updated }); };
   const toggleEditUserRole = (role: UserRole) => { if (!editingUser) return; const updated = editingUser.roles.includes(role) ? editingUser.roles.filter(r => r !== role) : [...editingUser.roles, role]; setEditingUser({ ...editingUser, roles: updated }); };
   const addToTeam = (userId: number) => { if (editingTeam) assignUserToTeam(userId, editingTeam.id); };
   const removeFromTeam = (userId: number) => { assignUserToTeam(userId, null); };
+
+  // 🟢 NEW: Handler for saving the edit with FRONTEND VALIDATION
+  const handleSaveEditWorkType = (e: React.FormEvent) => {
+      e.preventDefault();
+      
+      const oldName = editingWorkType;
+      const newName = editWorkTypeVal.trim();
+
+      if (!oldName || !newName) return;
+
+      if (oldName === newName) {
+          setShowWorkTypeModal(false);
+          setEditingWorkType(null);
+          setEditWorkTypeVal('');
+          return;
+      }
+
+      const isDuplicate = state.workTypes.some((type: string) => 
+          type.toLowerCase() === newName.toLowerCase() && 
+          type.toLowerCase() !== oldName.toLowerCase()
+      );
+
+      if (isDuplicate) {
+
+          alert(`Error: The Work Type "${newName}" already exists.`);
+          return; 
+      }
+
+      updateWorkType(oldName, newName);
+      
+      setShowWorkTypeModal(false);
+      setEditingWorkType(null);
+      setEditWorkTypeVal('');
+  };
+
+  // Helper to open the modal
+  const openEditModal = (type: string) => {
+      setEditingWorkType(type);
+      setEditWorkTypeVal(type);
+      setShowWorkTypeModal(true);
+  };
   
   const handleSaveConfig = async () => {
       const res = await updateConfig(scoring);
@@ -167,15 +236,35 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ store, currentView }) =
                 <div className="p-8">
                     <div className="max-w-2xl">
                         <p className="text-sm text-slate-500 mb-6">Manage the work types available for Project Managers when initializing projects.</p>
+                        
+                        {/* Add Work Type Form */}
                         <form onSubmit={handleAddWorkType} className="flex gap-2 mb-8">
                             <input type="text" placeholder="e.g. Design, Analysis..." className="flex-grow border border-slate-200 rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-amber-500" value={newWorkType} onChange={(e) => setNewWorkType(e.target.value)} />
                             <button className="bg-amber-500 text-white px-8 py-3 rounded-xl font-bold text-sm shadow-lg shadow-amber-100 hover:bg-amber-600">Add Work Type</button>
                         </form>
+                        
                         <div className="flex flex-wrap gap-3">
                             {state.workTypes.map((type: string) => (
                             <div key={type} className="flex items-center gap-3 px-4 py-3 bg-white text-slate-700 rounded-xl font-bold border border-slate-200 shadow-sm hover:border-amber-200 transition-all group">
-                                {type}
-                                <button onClick={() => removeWorkType(type)} className="text-slate-300 hover:text-red-500 group-hover:text-slate-400 transition-colors"><i className="fas fa-times-circle"></i></button>
+                                <span className="select-all">{type}</span>
+                                
+                                <div className="flex gap-2 opacity-100 sm:opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <button 
+                                        onClick={() => openEditModal(type)} 
+                                        className="text-slate-300 hover:text-indigo-500 transition-colors" 
+                                        title="Edit Work Type"
+                                    >
+                                        <i className="fas fa-pencil-alt"></i>
+                                    </button>
+                                    
+                                    <button 
+                                        onClick={() => handleRemoveWorkType(type)} // 🟢 NEW: Uses your safe handler
+                                        className="text-slate-300 hover:text-red-500 transition-colors" 
+                                        title="Remove"
+                                    >
+                                        <i className="fas fa-times-circle"></i>
+                                    </button>
+                                </div>
                             </div>
                             ))}
                         </div>
@@ -353,6 +442,51 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ store, currentView }) =
                <div className="mt-6 pt-4 border-t border-slate-100 flex justify-end"><button onClick={() => setShowAddUserModal(false)} className="bg-slate-100 text-slate-600 hover:bg-slate-200 px-6 py-2 rounded-lg font-bold text-xs uppercase tracking-widest transition-colors">Done</button></div>
             </div>
          </div>
+      )}
+
+      {/* 🟢 NEW: Edit Work Type Modal */}
+      {showWorkTypeModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fadeIn">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+                <div className="bg-slate-50 px-6 py-4 border-b border-slate-100 flex justify-between items-center">
+                    <h3 className="font-bold text-slate-800">Edit Work Type</h3>
+                    <button onClick={() => setShowWorkTypeModal(false)} className="text-slate-400 hover:text-slate-600">✕</button>
+                </div>
+                
+                <form onSubmit={handleSaveEditWorkType} className="p-6 space-y-4">
+                    <div className="space-y-2">
+                        <label className="text-xs font-bold uppercase text-slate-400">Work Type Name</label>
+                        <input 
+                            autoFocus
+                            type="text" 
+                            className="w-full border-2 border-slate-200 rounded-xl px-4 py-3 font-bold text-slate-700 focus:border-indigo-500 outline-none text-lg" 
+                            value={editWorkTypeVal} 
+                            onChange={(e) => setEditWorkTypeVal(e.target.value)} 
+                        />
+                        <p className="text-xs text-amber-600 bg-amber-50 p-2 rounded">
+                            <i className="fas fa-exclamation-triangle mr-1"></i>
+                            <strong>Warning:</strong> Renaming this will update it for all existing projects.
+                        </p>
+                    </div>
+
+                    <div className="flex gap-3 pt-2">
+                        <button 
+                            type="button" 
+                            onClick={() => setShowWorkTypeModal(false)} 
+                            className="flex-1 py-3 bg-white border border-slate-200 text-slate-500 font-bold rounded-xl hover:bg-slate-50"
+                        >
+                            Cancel
+                        </button>
+                        <button 
+                            type="submit" 
+                            className="flex-1 py-3 bg-indigo-600 text-white font-bold rounded-xl shadow-lg shadow-indigo-200 hover:bg-indigo-700"
+                        >
+                            Update
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
       )}
     </div>
   );

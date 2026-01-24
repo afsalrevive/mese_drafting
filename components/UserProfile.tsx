@@ -72,14 +72,22 @@ const UserProfile = ({ store, onClose }) => {
     };
 
     return (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[100] backdrop-blur-sm">
-            <div className="bg-white p-8 rounded-3xl w-full max-w-md shadow-2xl">
-                <h2 className="text-xl font-black mb-6">Edit Profile</h2>
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[100] backdrop-blur-sm p-4">
+            <div className="bg-white p-6 md:p-8 rounded-2xl md:rounded-3xl w-full max-w-md shadow-2xl max-h-[90vh] overflow-y-auto custom-scrollbar relative">
+                
+                {/* Close Button (Mobile Friendly) */}
+                <button 
+                    onClick={onClose} 
+                    className="absolute top-4 right-4 text-slate-300 hover:text-slate-500 p-2"
+                >
+                    <i className="fas fa-times text-xl"></i>
+                </button>
+
+                <h2 className="text-xl font-black mb-6 text-slate-900">Edit Profile</h2>
                 
                 {/* Avatar Section */}
                 <div className="flex justify-center mb-6">
                     <div className="relative">
-                        {/* The Avatar Circle */}
                         <div className="relative w-24 h-24 rounded-full bg-slate-100 overflow-hidden border-2 border-indigo-100 group">
                             {form.avatar ? (
                                 <img src={form.avatar} className="w-full h-full object-cover" alt="Avatar"/>
@@ -89,14 +97,12 @@ const UserProfile = ({ store, onClose }) => {
                                 </div>
                             )}
                             
-                            {/* Camera Overlay for Upload */}
                             <label className="absolute inset-0 bg-black/50 flex items-center justify-center text-white opacity-0 group-hover:opacity-100 cursor-pointer transition-opacity">
                                 <i className="fas fa-camera"></i>
                                 <input type="file" className="hidden" accept="image/*" onChange={handleFile} />
                             </label>
                         </div>
 
-                        {/* Remove Button (Red X) - Only shows if avatar exists */}
                         {form.avatar && (
                             <button 
                                 onClick={removePhoto}
@@ -109,35 +115,35 @@ const UserProfile = ({ store, onClose }) => {
                     </div>
                 </div>
 
-                {/* Form Fields with Fixed Labels */}
+                {/* Form Fields */}
                 <div className="space-y-4">
                     <div>
-                        <label className="block text-sm font-bold text-slate-700 mb-1 ml-1">Full Name</label>
-                        <input className="w-full border p-3 rounded-xl outline-none focus:border-indigo-500 transition-colors" 
+                        <label className="block text-xs font-black text-slate-400 uppercase mb-1 ml-1">Full Name</label>
+                        <input className="w-full border-2 border-slate-100 p-3 rounded-xl outline-none focus:border-indigo-500 transition-colors font-bold text-sm" 
                             placeholder="Full Name" value={form.name} onChange={e=>setForm({...form, name:e.target.value})} />
                     </div>
                     <div>
-                        <label className="block text-sm font-bold text-slate-700 mb-1 ml-1">Username</label>
-                        <input className="w-full border p-3 rounded-xl outline-none focus:border-indigo-500 transition-colors" 
+                        <label className="block text-xs font-black text-slate-400 uppercase mb-1 ml-1">Username</label>
+                        <input className="w-full border-2 border-slate-100 p-3 rounded-xl outline-none focus:border-indigo-500 transition-colors font-bold text-sm" 
                             placeholder="Username" value={form.username} onChange={e=>setForm({...form, username:e.target.value})} />
                     </div>
                     <div>
-                        <label className="block text-sm font-bold text-slate-700 mb-1 ml-1">Email</label>
-                        <input className="w-full border p-3 rounded-xl outline-none focus:border-indigo-500 transition-colors" 
+                        <label className="block text-xs font-black text-slate-400 uppercase mb-1 ml-1">Email</label>
+                        <input className="w-full border-2 border-slate-100 p-3 rounded-xl outline-none focus:border-indigo-500 transition-colors font-bold text-sm" 
                             placeholder="Email" value={form.email} onChange={e=>setForm({...form, email:e.target.value})} />
                     </div>
                     <div>
-                        <label className="block text-sm font-bold text-slate-700 mb-1 ml-1">Password</label>
-                        <input className="w-full border p-3 rounded-xl outline-none focus:border-indigo-500 transition-colors" type="password" 
-                            placeholder="New Password" value={form.password} onChange={e=>setForm({...form, password:e.target.value})} />
+                        <label className="block text-xs font-black text-slate-400 uppercase mb-1 ml-1">Password</label>
+                        <input className="w-full border-2 border-slate-100 p-3 rounded-xl outline-none focus:border-indigo-500 transition-colors font-bold text-sm" type="password" 
+                            placeholder="New Password (Optional)" value={form.password} onChange={e=>setForm({...form, password:e.target.value})} />
                     </div>
                 </div>
                 
-                {msg && <p className={`text-center mt-4 text-sm font-bold ${msg==='Saved!'?'text-green-600':'text-red-600'}`}>{msg}</p>}
+                {msg && <p className={`text-center mt-4 text-xs font-black uppercase tracking-wider ${msg==='Saved!'?'text-green-600':'text-red-500'}`}>{msg}</p>}
 
-                <div className="flex gap-2 mt-6">
-                    <button onClick={save} className="flex-1 bg-indigo-600 text-white py-3 rounded-xl font-bold hover:bg-indigo-700">Save</button>
-                    <button onClick={onClose} className="flex-1 bg-slate-100 text-slate-600 py-3 rounded-xl font-bold hover:bg-slate-200">Cancel</button>
+                <div className="flex gap-3 mt-8">
+                    <button onClick={save} className="flex-1 bg-indigo-600 text-white py-3.5 rounded-xl font-black text-sm uppercase shadow-lg shadow-indigo-200 hover:bg-indigo-700 active:scale-95 transition-all">Save Changes</button>
+                    <button onClick={onClose} className="flex-1 bg-slate-100 text-slate-500 py-3.5 rounded-xl font-black text-sm uppercase hover:bg-slate-200 active:scale-95 transition-all">Cancel</button>
                 </div>
             </div>
         </div>

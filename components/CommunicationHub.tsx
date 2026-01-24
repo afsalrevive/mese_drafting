@@ -289,11 +289,11 @@ const CommunicationHub = ({ store }: any) => {
     const canTypeInChat = channel !== 'Announcements' || isPM;
 
     return (
-        <div className="max-w-5xl mx-auto space-y-4 animate-fadeIn h-[calc(100vh-140px)] flex flex-col relative">
+        <div className="max-w-5xl mx-auto space-y-4 animate-fadeIn h-[calc(100dvh-140px)] flex flex-col relative">
             
             {viewImage && <ImageViewer src={viewImage} onClose={() => setViewImage(null)} />}
 
-            <div className="flex gap-4 mb-2 shrink-0">
+            <div className="flex gap-4 mb-2 shrink-0 overflow-x-auto pb-1">
                 <button onClick={()=>setMode('CHAT')} className={`px-6 py-2 rounded-xl font-bold text-sm transition-all ${mode==='CHAT'?'bg-indigo-600 text-white shadow-md':'bg-white text-slate-500 hover:bg-slate-50'}`}>
                     <i className="fas fa-comments mr-2"></i> Team Chat
                 </button>

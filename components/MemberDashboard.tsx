@@ -113,18 +113,18 @@ const MemberDashboard: React.FC<MemberDashboardProps> = ({ store, currentView })
   return (
     <div className="space-y-6 animate-fadeIn relative">
       {/* HEADER */}
-      <div className="flex flex-col md:flex-row justify-between items-center gap-4 bg-white p-4 rounded-2xl shadow-sm border border-slate-100">
-         <div className="flex items-center gap-4">
-             <h2 className="text-lg font-black text-slate-900 uppercase tracking-wide">My Tasks</h2>
-             <div className="flex bg-slate-100 p-1 rounded-lg">
+      <div className="flex flex-col md:flex-row justify-between items-stretch md:items-center gap-4 bg-white p-4 rounded-2xl shadow-sm border border-slate-100">
+         <div className="flex flex-col md:flex-row items-start md:items-center gap-4 w-full md:w-auto">
+             <h2 className="text-lg font-black text-slate-900 uppercase tracking-wide shrink-0">My Tasks</h2>
+             <div className="flex bg-slate-100 p-1 rounded-lg w-full md:w-auto overflow-x-auto">
                  {['ongoing', 'recent', 'completed', 'hold','rejected'].map(t => (
-                     <button key={t} onClick={()=>setFilterTab(t)} className={`px-4 py-1.5 rounded-md text-[10px] font-black uppercase transition-all ${filterTab === t ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>{t}</button>
+                     <button key={t} onClick={()=>setFilterTab(t)} className={`flex-1 md:flex-none px-4 py-1.5 rounded-md text-[10px] font-black uppercase transition-all whitespace-nowrap ${filterTab === t ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>{t}</button>
                  ))}
              </div>
          </div>
-         <div className="relative">
-            <i className="fas fa-search absolute left-3 top-2.5 text-slate-400 text-xs"></i>
-            <input placeholder="Search..." className="pl-9 pr-4 py-2 border border-slate-200 rounded-xl text-xs font-bold w-64 focus:outline-none focus:ring-2 focus:ring-indigo-500" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
+         <div className="relative w-full md:w-auto">
+            <i className="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
+            <input placeholder="Search..." className="pl-9 pr-4 py-2 border border-slate-200 rounded-xl text-xs font-bold w-full md:w-64 focus:outline-none focus:ring-2 focus:ring-indigo-500" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
          </div>
       </div>
 
@@ -157,7 +157,7 @@ const MemberDashboard: React.FC<MemberDashboardProps> = ({ store, currentView })
                     </div>
                     
                     {/* SCOPE ITEMS */}
-                    <div className="grid grid-cols-4 gap-4 text-xs">
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs">
                         <div className="col-span-2">
                             <p className="font-bold text-slate-400 uppercase text-[10px] mb-1">Scope</p>
                             <div className="space-y-1">

@@ -132,13 +132,16 @@ export const useStore = () => {
       } catch(e) {}
   };
 
-  const fetchWorkTypes = async () => { 
-      if (!token) return;
-      try {
-        const res = await fetch(`${API_BASE}/workTypes`, {headers:{Authorization:token}});
-        if(res.ok) { const workTypes = await res.json(); setState(p => ({ ...p, workTypes })); }
-      } catch(e) {}
-  };
+  const fetchWorkTypes = async () => {
+    const res = await fetch(`${API_BASE}/config/worktype`, { 
+        headers: { Authorization: token! } 
+    });
+    
+    if (res.ok) {
+        const data = await res.json();
+        setState(prev => ({ ...prev, workTypes: data }));
+    }
+};
   
   const fetchStats = async () => { 
       if (!token) return;
@@ -221,9 +224,32 @@ export const useStore = () => {
   const revokeMemberRejection = (id) => updateMemberAssignment(id, {status:'IN_PROGRESS', rejectionReason: null});
   const deleteMemberAssignment = (id) => fetch(`${API_BASE}/memberAssignments/${id}`, { method: 'DELETE', headers: {Authorization:token!} }).then(fetchMemberAssignments);
   const addRemark = (id, isGroup, remark) => fetch(`${API_BASE}/${isGroup?'groupAssignments':'memberAssignments'}/${id}`, { method: 'PUT', headers: {'Content-Type':'application/json', Authorization:token!}, body: JSON.stringify({remarks:remark}) }).then(isGroup?fetchGroupAssignments:fetchMemberAssignments);
-  const addWorkType = (name) => fetch(`${API_BASE}/workTypes`, { method: 'POST', headers: {'Content-Type':'application/json', Authorization:token!}, body: JSON.stringify({name}) }).then(fetchWorkTypes);
-  const removeWorkType = (name) => fetch(`${API_BASE}/workTypes/${name}`, { method: 'DELETE', headers: {Authorization:token!} }).then(fetchWorkTypes);
-  
+  const addWorkType = async (name: string) => {
+      const res = await fetch(`${API_BASE}/config/worktype`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: token! },
+          body: JSON.stringify({ name })
+      });
+      
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to add work type"); // 🟢 THROW ERROR
+      
+      // Update State only on success
+      setState(prev => ({ ...prev, workTypes: [...prev.workTypes, name] }));
+  };
+
+  const removeWorkType = async (name: string) => {
+      const res = await fetch(`${API_BASE}/config/worktype/${encodeURIComponent(name)}`, {
+          method: 'DELETE',
+          headers: { Authorization: token! }
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to delete work type"); // 🟢 THROW ERROR
+
+      // Update State only on success
+      setState(prev => ({ ...prev, workTypes: prev.workTypes.filter(t => t !== name) }));
+  };
   const fetchNotifications = async () => { 
       if (!token) return;
       try {
@@ -266,6 +292,25 @@ export const useStore = () => {
       fetchForum();
   };
 
+  const updateWorkType = async (oldName: string, newName: string) => {
+      // 1. Optimistic Update (Update UI immediately)
+      setState(prev => ({
+        ...prev,
+        workTypes: prev.workTypes.map(t => t === oldName ? newName : t)
+    }));
+
+    // 2. Send to Backend
+    try {
+        await fetch(`${API_BASE}/config/worktype`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json', Authorization: token! },
+            body: JSON.stringify({ oldName, newName })
+        });
+    } catch (err) {
+        console.error("Failed to sync rename", err);
+    }
+  };
+
   return { 
     state, setState, login, logout, signup, 
     approveUser, deleteUser, updateProfile, createTeam, assignUserToTeam, updateUser,
@@ -276,6 +321,6 @@ export const useStore = () => {
     addRemark, addWorkType, removeWorkType, fetchStats, generateReport,
     fetchTeams, fetchProjects, fetchGroupAssignments, fetchMemberAssignments, fetchUsers,
     updateConfig,fetchNotifications, markRead, clearNotifications,fetchChat, sendMessage,
-    fetchForum, createThread, createComment, fetchAvailability
+    fetchForum, createThread, createComment, fetchAvailability,updateWorkType
   };
 };
