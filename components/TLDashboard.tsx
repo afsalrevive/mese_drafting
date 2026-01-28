@@ -160,10 +160,15 @@ const TLDashboard: React.FC<TLDashboardProps> = ({ store, currentView }) => {
       setAllocScope([]);
   };
 
-  const handleRejectMember = (ma: MemberAssignment) => {
-      const reason = prompt("Enter rejection reason for member:");
-      if(reason) updateMemberAssignment(ma.id, { status: 'REJECTED', rejectionReason: reason });
-  };
+  const handleRevokeSubmission = (ma: MemberAssignment) => {
+    const reason = prompt("Enter reason for revoking (this will send it back to the member):");
+    if(reason) {
+        updateMemberAssignment(ma.id, { 
+            status: 'IN_PROGRESS', // <--- KEY FIX: Makes it visible to member again
+            rejectionReason: reason 
+        });
+    }
+};
 
   const openEdit = (ma: MemberAssignment) => { 
       setAllocForm({ memberId: String(ma.memberId), assignedTime: ma.assignedTime, eta: ma.eta }); 
@@ -407,9 +412,28 @@ const TLDashboard: React.FC<TLDashboardProps> = ({ store, currentView }) => {
                                         
                                         <td className="p-3 align-top">
                                             <div className="flex flex-col items-start">
-                                                <span className={`px-2 py-1 rounded text-[9px] font-black uppercase ${ma.status==='COMPLETED'?'bg-green-100 text-green-700':ma.status==='REJECTED'?'bg-red-100 text-red-600':'bg-slate-100 text-slate-600'}`}>{ma.status.replace('_', ' ')}</span>
+                                                <span className={`px-2 py-1 rounded text-[9px] font-black uppercase ${
+                                                    ma.status === 'COMPLETED' ? 'bg-green-100 text-green-700' : 
+                                                    ma.status === 'REJECTED' ? 'bg-red-100 text-red-600' : 
+                                                    'bg-slate-100 text-slate-600'
+                                                }`}>
+                                                    {ma.status.replace('_', ' ')}
+                                                </span>
+
+                                                {/* SHOW COMPLETION TIME & LATE INDICATOR */}
                                                 {ma.status === 'COMPLETED' && ma.completionTime && (
-                                                    <span className="text-[9px] text-green-600 mt-1 font-bold">Done: {new Date(ma.completionTime).toLocaleString()}</span>
+                                                    <div className="flex items-center gap-1 mt-1">
+                                                        <span className="text-[9px] text-green-600 font-bold">
+                                                            Done: {new Date(ma.completionTime).toLocaleString()}
+                                                        </span>
+                                                        
+                                                        {/* LOGIC: Only show if Completion Time is AFTER the ETA */}
+                                                        {new Date(ma.completionTime) > new Date(ma.eta) && (
+                                                            <span className="text-[8px] px-1 py-0.5 bg-red-100 text-red-600 border border-red-200 rounded font-bold" title="Submitted Late">
+                                                                <i className="fas fa-exclamation-circle"></i> Late
+                                                            </span>
+                                                        )}
+                                                    </div>
                                                 )}
                                             </div>
                                         </td>
@@ -448,7 +472,7 @@ const TLDashboard: React.FC<TLDashboardProps> = ({ store, currentView }) => {
                                             {ma.status === 'PENDING_ACK' && (
                                                 <>
                                                     <button onClick={()=>setReviewData(ma)} className="bg-green-600 text-white px-2 py-1 rounded text-[9px] font-bold">Review</button>
-                                                    <button onClick={()=>handleRejectMember(ma)} className="bg-red-50 text-red-600 px-2 py-1 rounded text-[9px] font-bold border border-red-100">Reject</button>
+                                                    <button onClick={()=>handleRevokeSubmission(ma)} className="bg-red-50 text-red-600 px-2 py-1 rounded text-[9px] font-bold border border-red-100">Revoke</button>
                                                 </>
                                             )}
                                             

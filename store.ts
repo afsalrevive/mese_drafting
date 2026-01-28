@@ -219,6 +219,32 @@ export const useStore = () => {
           remarks,
           screenshot
       });
+
+  const submitMemberWorkWithFile = async (id: number, remarks: string, customTime: string | null, file: File | null) => {
+      if (!token) throw new Error('Authentication Error: Token missing.');
+
+      if (file) {
+          // Upload screenshot file
+          const formData = new FormData();
+          formData.append('screenshot', file);
+          formData.append('id', id.toString());
+          formData.append('remarks', remarks);
+          if (customTime) formData.append('customTime', customTime);
+
+          const res = await fetch(`${API_BASE}/memberAssignments/submit`, {
+              method: 'POST',
+              headers: { Authorization: token! },
+              body: formData
+          });
+
+          if (!res.ok) throw new Error('Failed to submit work');
+          await fetchMemberAssignments();
+      } else {
+          // No file, just update with remarks
+          await submitMemberWork(id, remarks, customTime, null);
+      }
+  };
+
   const acknowledgeMemberWork = (id, rating, overrideBlackmark) => updateMemberAssignment(id, {status:'COMPLETED', rating, overrideBlackmark});
   const revokeMemberWork = (id) => updateMemberAssignment(id, {status:'IN_PROGRESS', completionTime:null});
   const revokeMemberRejection = (id) => updateMemberAssignment(id, {status:'IN_PROGRESS', rejectionReason: null});
@@ -292,6 +318,123 @@ export const useStore = () => {
       fetchForum();
   };
 
+  // --- CENTRALIZED FILE UPLOAD METHODS ---
+  const uploadChatImage = async (file: File, channel: string, currentUser: any) => {
+      if (!token) throw new Error('Authentication Error: Token missing.');
+      
+      const validTypes = ['image/jpeg', 'image/png', 'image/jpg'];
+      if (!validTypes.includes(file.type)) {
+          throw new Error('Only JPEG and PNG images are allowed.');
+      }
+
+      const formData = new FormData();
+      formData.append('image', file);
+      formData.append('senderId', currentUser.id);
+      formData.append('senderName', currentUser.name);
+      formData.append('senderRole', currentUser.roles.includes('PROJECT_MANAGER') || currentUser.roles.includes('ADMIN') ? 'PM' : 'MEMBER');
+      formData.append('channel', channel);
+      formData.append('isImage', 'true');
+      formData.append('message', file.name);
+
+      const res = await fetch(`${API_BASE}/chat`, { 
+          method: 'POST', 
+          headers: { Authorization: token! }, 
+          body: formData 
+      });
+
+      if (!res.ok) throw new Error('Failed to upload chat image');
+      await fetchChat();
+  };
+
+  const uploadForumThreadImage = async (file: File, title: string, content: string, currentUser: any) => {
+      if (!token) throw new Error('Authentication Error: Token missing.');
+      
+      const validTypes = ['image/jpeg', 'image/png', 'image/jpg'];
+      if (!validTypes.includes(file.type)) {
+          throw new Error('Only JPEG and PNG images are allowed.');
+      }
+
+      const formData = new FormData();
+      formData.append('image', file);
+      formData.append('authorId', currentUser.id);
+      formData.append('authorName', currentUser.name);
+      formData.append('title', title);
+      formData.append('content', file.name);
+      formData.append('isImage', 'true');
+
+      const res = await fetch(`${API_BASE}/forum`, { 
+          method: 'POST', 
+          headers: { Authorization: token! }, 
+          body: formData 
+      });
+
+      if (!res.ok) throw new Error('Failed to create forum thread');
+      await fetchForum();
+  };
+
+  const uploadForumCommentImage = async (file: File, threadId: number, currentUser: any) => {
+      if (!token) throw new Error('Authentication Error: Token missing.');
+      
+      const validTypes = ['image/jpeg', 'image/png', 'image/jpg'];
+      if (!validTypes.includes(file.type)) {
+          throw new Error('Only JPEG and PNG images are allowed.');
+      }
+
+      const formData = new FormData();
+      formData.append('image', file);
+      formData.append('threadId', threadId.toString());
+      formData.append('authorId', currentUser.id.toString());
+      formData.append('authorName', currentUser.name);
+      formData.append('content', file.name);
+      formData.append('isImage', 'true');
+
+      const res = await fetch(`${API_BASE}/forum/comment`, { 
+          method: 'POST', 
+          headers: { Authorization: token! }, 
+          body: formData 
+      });
+
+      if (!res.ok) throw new Error('Failed to upload comment image');
+      await fetchForum();
+  };
+
+  // --- CENTRALIZED DELETE METHODS ---
+  const deleteChatMessage = async (id: number, currentUser: any) => {
+      if (!token) throw new Error('Authentication Error: Token missing.');
+      
+      const res = await fetch(`${API_BASE}/chat/${id}`, { 
+          method: 'DELETE', 
+          headers: { Authorization: token! } 
+      });
+
+      if (!res.ok) throw new Error('Failed to delete message');
+      await fetchChat();
+  };
+
+  const deleteForumThread = async (id: number, currentUser: any) => {
+      if (!token) throw new Error('Authentication Error: Token missing.');
+      
+      const res = await fetch(`${API_BASE}/forum/thread/${id}`, { 
+          method: 'DELETE', 
+          headers: { Authorization: token! } 
+      });
+
+      if (!res.ok) throw new Error('Failed to delete thread');
+      await fetchForum();
+  };
+
+  const deleteForumComment = async (id: number, currentUser: any) => {
+      if (!token) throw new Error('Authentication Error: Token missing.');
+      
+      const res = await fetch(`${API_BASE}/forum/comment/${id}`, { 
+          method: 'DELETE', 
+          headers: { Authorization: token! } 
+      });
+
+      if (!res.ok) throw new Error('Failed to delete comment');
+      await fetchForum();
+  };
+
   const updateWorkType = async (oldName: string, newName: string) => {
       // 1. Optimistic Update (Update UI immediately)
       setState(prev => ({
@@ -312,15 +455,17 @@ export const useStore = () => {
   };
 
   return { 
-    state, setState, login, logout, signup, 
+    state, setState, login, logout, signup, token,
     approveUser, deleteUser, updateProfile, createTeam, assignUserToTeam, updateUser,
     createProject, updateProject, deleteProject, toggleProjectHold, triggerRework,
     assignToGroup, updateGroupAssignment, deleteGroupAssignment, revokeGroupWork, revokeGroupRejection,
-    assignToMember, updateMemberAssignment, submitMemberWork, acknowledgeMemberWork, revokeMemberWork, 
+    assignToMember, updateMemberAssignment, submitMemberWork, submitMemberWorkWithFile, acknowledgeMemberWork, revokeMemberWork, 
     revokeMemberRejection, deleteMemberAssignment,
     addRemark, addWorkType, removeWorkType, fetchStats, generateReport,
     fetchTeams, fetchProjects, fetchGroupAssignments, fetchMemberAssignments, fetchUsers,
-    updateConfig,fetchNotifications, markRead, clearNotifications,fetchChat, sendMessage,
-    fetchForum, createThread, createComment, fetchAvailability,updateWorkType
+    updateConfig, fetchNotifications, markRead, clearNotifications, fetchChat, sendMessage,
+    fetchForum, createThread, createComment, fetchAvailability, updateWorkType,
+    uploadChatImage, uploadForumThreadImage, uploadForumCommentImage,
+    deleteChatMessage, deleteForumThread, deleteForumComment
   };
 };

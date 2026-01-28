@@ -8,7 +8,7 @@ interface MemberDashboardProps {
 }
 
 const MemberDashboard: React.FC<MemberDashboardProps> = ({ store, currentView }) => {
-  const { state, updateMemberAssignment, addRemark } = store;
+  const { state, updateMemberAssignment, addRemark, submitMemberWorkWithFile, fetchMemberAssignments } = store;
   const [successMsg, setSuccessMsg] = useState('');
   
   const [filterTab, setFilterTab] = useState('ongoing'); 
@@ -62,37 +62,12 @@ const MemberDashboard: React.FC<MemberDashboardProps> = ({ store, currentView })
   const handleSubmitWork = async () => {
     if (!selectedAssignment) return;
 
-    const token = localStorage.getItem('token');
-    if (!token) {
-        setSuccessMsg("Error: Please log in again.");
-        return;
-    }
-
-    const formData = new FormData();
-    formData.append('id', String(selectedAssignment.id));
-    formData.append('remarks', remarks);
-    
-    if (state.config?.ALLOW_TIME_EDIT && submitTime) {
-        formData.append('customTime', new Date(submitTime).toISOString());
-    }
-    
-    if (fileToUpload) {
-        formData.append('screenshot', fileToUpload);
-    }
-
     try {
-        const response = await fetch('/api/memberAssignments/submit', {
-            method: 'POST',
-            headers: { 'Authorization': token }, // Removed "Bearer " as per your server setup
-            body: formData
-        });
+        setSuccessMsg("⏳ Submitting...");
         
-        if (!response.ok) {
-            const err = await response.text();
-            throw new Error(err || 'Server Error');
-        }
-
-        // 2. UPDATED: Show Inline Message & Auto-Refresh
+        const customTime = state.config?.ALLOW_TIME_EDIT && submitTime ? submitTime : null;
+        await submitMemberWorkWithFile(selectedAssignment.id, remarks, customTime, fileToUpload);
+        
         setSuccessMsg("✓ Submitted Successfully! Updating...");
         
         // Wait 1.5s then reload to show new status

@@ -177,7 +177,21 @@ const PMDashboard: React.FC<PMDashboardProps> = ({ store, currentView }) => {
           }));
       }
   };
-  const removeDiv = (div: string) => setProjForm(prev => ({ ...prev, divisions: prev.divisions.filter(d => d !== div) }));
+  const removeDiv = (div: string) => {
+      // 1. Check Scope Mapping (Builder rules)
+      const inScope = projForm.scopeMapping.some(rule => rule.divs.includes(div));
+      // 2. Check Allocation (Live Teams) - Only if editing an existing project
+      const inAlloc = editingProjectId && state.groupAssignments.some((ga: GroupAssignment) => 
+          ga.projectId === editingProjectId && 
+          ga.scope.some((s: ScopeItem) => s.division === div)
+      );
+
+      if(inScope || inAlloc) {
+          alert(`Cannot delete Division "${div}":\nIt is currently used in scope rules or allocated to a team.`);
+          return;
+      }
+      setProjForm(prev => ({ ...prev, divisions: prev.divisions.filter(d => d !== div) }));
+  };
 
   const addGeneratedParts = () => {
       const newItems = generateItems(projForm.newPartPrefix, projForm.newPartCount, projForm.newPartStart);
@@ -198,7 +212,19 @@ const PMDashboard: React.FC<PMDashboardProps> = ({ store, currentView }) => {
           }));
       }
   };
-  const removePart = (part: string) => setProjForm(prev => ({ ...prev, partNos: prev.partNos.filter(p => p !== part) }));
+  const removePart = (part: string) => {
+      const inScope = projForm.scopeMapping.some(rule => rule.parts.includes(part));
+      const inAlloc = editingProjectId && state.groupAssignments.some((ga: GroupAssignment) => 
+          ga.projectId === editingProjectId && 
+          ga.scope.some((s: ScopeItem) => s.parts.some(p => p.name === part))
+      );
+
+      if(inScope || inAlloc) {
+          alert(`Cannot delete Part "${part}":\nIt is currently used in scope rules or allocated to a team.`);
+          return;
+      }
+      setProjForm(prev => ({ ...prev, partNos: prev.partNos.filter(p => p !== part) }));
+  };
 
   // --- ALLOCATION SELECTOR ---
   const toggleAllocScope = (div: string, part: string, wt: string) => {
@@ -328,6 +354,27 @@ const PMDashboard: React.FC<PMDashboardProps> = ({ store, currentView }) => {
           return;
       }
 
+      // 🟢 LOGIC: Handle Scope Ambiguity
+      let finalScopeMapping = [...projForm.scopeMapping];
+
+      // CASE 1: New Project with NO rules defined
+      // We force generate an "All-to-All" rule so it starts as Explicit, not Implicit.
+      if (!editingProjectId && finalScopeMapping.length === 0) {
+          if (projForm.divisions.length > 0 && projForm.partNos.length > 0 && projForm.workTypes.length > 0) {
+              finalScopeMapping = [{
+                  divs: projForm.divisions,
+                  parts: projForm.partNos,
+                  wts: projForm.workTypes
+              }];
+              // Optional: Notify user (or just do it silently)
+              console.log("Auto-generated All-to-All scope for new project");
+          }
+      }
+      
+      // CASE 2: Existing Project (Legacy)
+      // We do NOTHING. If finalScopeMapping is empty, we send empty. 
+      // This preserves the "Implicit" legacy mode for old projects.
+
       const payload = { 
           name: projForm.name, 
           date: projForm.date, 
@@ -335,9 +382,8 @@ const PMDashboard: React.FC<PMDashboardProps> = ({ store, currentView }) => {
           partNos: projForm.partNos,
           workTypes: projForm.workTypes,
           
-          // 🟢 CRITICAL FIX: Always send a string, never null. 
-          // If empty, this sends "[]", which correctly wipes the DB column.
-          scopeStructure: JSON.stringify(projForm.scopeMapping) 
+          // Send the calculated scope structure
+          scopeStructure: JSON.stringify(finalScopeMapping) 
       };
 
       if (editingProjectId) await updateProject(editingProjectId, payload);
@@ -1080,62 +1126,95 @@ const PMDashboard: React.FC<PMDashboardProps> = ({ store, currentView }) => {
                         {/* RULES LIST AREA */}
                         <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 space-y-3">
                              {projForm.scopeMapping.length === 0 && (
-                                 <div className="h-full flex flex-col items-center justify-center text-slate-400 opacity-60">
-                                     <i className="fas fa-layer-group text-5xl mb-4 text-indigo-200"></i>
-                                     <p className="text-sm font-bold text-slate-500">Default Mode: All-to-All</p>
-                                     <p className="text-xs">Every Division gets every Part & Work Type.</p>
-                                 </div>
-                             )}
+                                <div className="h-full flex flex-col items-center justify-center text-slate-400 opacity-60">
+                                    <i className="fas fa-layer-group text-5xl mb-4 text-indigo-200"></i>
+                                    <p className="text-sm font-bold text-slate-500">
+                                        {editingProjectId ? 'Legacy Mode: All-to-All' : 'Default: All-to-All'}
+                                    </p>
+                                    <p className="text-xs text-center max-w-[200px]">
+                                        {editingProjectId 
+                                            ? "This project uses dynamic legacy mapping." // Old projects stay implicit
+                                            : "An explicit All-to-All rule will be created automatically upon save." // New projects get explicit rule
+                                        }
+                                    </p>
+                                </div>
+                            )}
+                            {projForm.scopeMapping.map((rule, idx) => {
+                                const isLocked = isRuleInUse(rule); 
+                                const isEditing = projForm.editingRuleIndex === idx;
 
-                             {projForm.scopeMapping.map((rule, idx) => {
-                                 const isLocked = isRuleInUse(rule); 
-                                 // Highlight if currently editing this specific rule
-                                 const isEditing = projForm.editingRuleIndex === idx;
+                                // 🟢 1. DETERMINE PROJECT TYPE
+                                // Check if the project being edited originally had rules defined.
+                                // If yes, it's a "Standard Project". If no (or null), it's "Legacy".
+                                const originalProject = editingProjectId 
+                                    ? state.projects.find((p: Project) => p.id === editingProjectId) 
+                                    : null;
+                                    
+                                const isLegacyProject = originalProject 
+                                    ? (!originalProject.scopeStructure || originalProject.scopeStructure === "[]")
+                                    : true; // New projects (unsaved) are treated loosely until saved
 
-                                 return (
-                                     <div key={idx} className={`bg-white p-4 rounded-2xl border-l-[6px] shadow-sm flex gap-4 items-center group transition-all ${isEditing ? 'border-l-amber-500 ring-2 ring-amber-100 bg-amber-50' : isLocked ? 'border-l-slate-400 bg-slate-50/50' : 'border-l-indigo-500 hover:shadow-md'}`}>
-                                         <div className="flex-1 grid grid-cols-3 gap-6 text-xs">
-                                             <div><span className="text-[9px] font-bold text-slate-400 uppercase block mb-1">Divisions</span><span className="font-bold text-slate-700 leading-relaxed">{rule.divs.join(', ')}</span></div>
-                                             <div><span className="text-[9px] font-bold text-slate-400 uppercase block mb-1">Parts</span><span className="font-bold text-slate-700 leading-relaxed">{rule.parts.join(', ')}</span></div>
-                                             <div><span className="text-[9px] font-bold text-slate-400 uppercase block mb-1">Work Types</span><span className="font-bold text-indigo-600 leading-relaxed">{rule.wts.join(', ')}</span></div>
-                                         </div>
+                                // 🟢 2. CALCULATE DELETE GUARD
+                                const isLastRule = projForm.scopeMapping.length === 1;
+                                
+                                // We forbid deletion if:
+                                // A. It is the LAST rule
+                                // B. AND it is NOT a legacy project (Standard projects must have >= 1 rule)
+                                // C. AND we are in Edit Mode (not creating a fresh project from scratch)
+                                const isDeleteDisabled = isLocked || isEditing || (isLastRule && !isLegacyProject && editingProjectId);
 
-                                         <div className="flex gap-2 opacity-60 group-hover:opacity-100 transition-opacity">
-                                             {/* Edit Button */}
-                                             <button 
-                                                 type="button" 
-                                                 onClick={() => {
-                                                     // Load into temp state and set editing index
-                                                     setProjForm(prev => ({ 
-                                                         ...prev, 
-                                                         tempMapDivs: rule.divs, tempMapParts: rule.parts, tempMapWTs: rule.wts, 
-                                                         editingRuleIndex: idx 
-                                                     }));
-                                                 }} 
-                                                 className={`p-2.5 rounded-xl transition-colors ${isEditing ? 'bg-amber-500 text-white shadow-md' : 'bg-slate-50 hover:bg-indigo-100 text-indigo-600'}`}
-                                                 title="Edit Rule"
-                                             >
-                                                 <i className="fas fa-edit"></i>
-                                             </button>
-                                             
-                                             {/* Delete Button */}
-                                             <button 
-                                                 type="button" 
-                                                 disabled={isLocked || isEditing}
-                                                 onClick={() => {
-                                                     if(window.confirm("Are you sure you want to delete this scope rule?")) {
-                                                         setProjForm(prev => ({...prev, scopeMapping: prev.scopeMapping.filter((_, i) => i !== idx)}));
-                                                     }
-                                                 }} 
-                                                 className={`p-2.5 rounded-xl transition-colors ${isLocked || isEditing ? 'bg-slate-100 text-slate-300 cursor-not-allowed' : 'bg-slate-50 hover:bg-red-100 text-red-500'}`}
-                                                 title={isLocked ? "Cannot delete: Work allocated" : "Delete Rule"}
-                                             >
-                                                 {isLocked ? <i className="fas fa-lock"></i> : <i className="fas fa-trash"></i>}
-                                             </button>
-                                         </div>
-                                     </div>
-                                 );
-                             })}
+                                return (
+                                    <div key={idx} className={`bg-white p-4 rounded-2xl border-l-[6px] shadow-sm flex gap-4 items-center group transition-all ${isEditing ? 'border-l-amber-500 ring-2 ring-amber-100 bg-amber-50' : isLocked ? 'border-l-slate-400 bg-slate-50/50' : 'border-l-indigo-500 hover:shadow-md'}`}>
+                                        <div className="flex-1 grid grid-cols-3 gap-6 text-xs">
+                                            <div><span className="text-[9px] font-bold text-slate-400 uppercase block mb-1">Divisions</span><span className="font-bold text-slate-700 leading-relaxed">{rule.divs.join(', ')}</span></div>
+                                            <div><span className="text-[9px] font-bold text-slate-400 uppercase block mb-1">Parts</span><span className="font-bold text-slate-700 leading-relaxed">{rule.parts.join(', ')}</span></div>
+                                            <div><span className="text-[9px] font-bold text-slate-400 uppercase block mb-1">Work Types</span><span className="font-bold text-indigo-600 leading-relaxed">{rule.wts.join(', ')}</span></div>
+                                        </div>
+
+                                        <div className="flex gap-2 opacity-60 group-hover:opacity-100 transition-opacity">
+                                            {/* Edit Button */}
+                                            <button 
+                                                type="button" 
+                                                onClick={() => {
+                                                    setProjForm(prev => ({ 
+                                                        ...prev, 
+                                                        tempMapDivs: rule.divs, tempMapParts: rule.parts, tempMapWTs: rule.wts, 
+                                                        editingRuleIndex: idx 
+                                                    }));
+                                                }} 
+                                                className={`p-2.5 rounded-xl transition-colors ${isEditing ? 'bg-amber-500 text-white shadow-md' : 'bg-slate-50 hover:bg-indigo-100 text-indigo-600'}`}
+                                                title="Edit Rule"
+                                            >
+                                                <i className="fas fa-edit"></i>
+                                            </button>
+                                            
+                                            {/* Delete Button - UPDATED WITH GUARD */}
+                                            <button 
+                                                type="button" 
+                                                disabled={isDeleteDisabled}
+                                                onClick={() => {
+                                                    if(window.confirm("Are you sure you want to delete this scope rule?")) {
+                                                        setProjForm(prev => ({...prev, scopeMapping: prev.scopeMapping.filter((_, i) => i !== idx)}));
+                                                    }
+                                                }} 
+                                                className={`p-2.5 rounded-xl transition-colors ${
+                                                    isDeleteDisabled 
+                                                    ? 'bg-slate-100 text-slate-300 cursor-not-allowed' 
+                                                    : 'bg-slate-50 hover:bg-red-100 text-red-500'
+                                                }`}
+                                                title={
+                                                    isLocked ? "Cannot delete: Work allocated" : 
+                                                    isEditing ? "Cannot delete: Currently editing" :
+                                                    (isLastRule && !isLegacyProject) ? "Cannot delete: Project must have at least one rule" :
+                                                    "Delete Rule"
+                                                }
+                                            >
+                                                {isLocked ? <i className="fas fa-lock"></i> : <i className="fas fa-trash"></i>}
+                                            </button>
+                                        </div>
+                                    </div>
+                                );
+                            })}
                         </div>
                     </div>
                 </div>

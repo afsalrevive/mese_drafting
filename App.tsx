@@ -142,9 +142,8 @@ const App: React.FC = () => {
 
               <div className="flex items-center gap-2">
                 <div className="w-8 h-8 md:w-9 md:h-9 rounded-lg flex items-center justify-center transition-all overflow-hidden">
-                    {/* 🟢 REPLACE ICON WITH IMAGE */}
                     <img 
-                      src="/logo.jpg"  // Ensure 'logo.png' is in your 'public' folder
+                      src="/logo.jpg" 
                       alt="Logo" 
                       className="w-full h-full object-contain" 
                     />

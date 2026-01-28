@@ -1,7 +1,5 @@
 import React, { useState, useEffect, Component, ReactNode } from 'react';
 
-// --- COMPONENT: ERROR BOUNDARY (Prevents White Screen of Death) ---
-// This isolates crashes to a single message bubble instead of the whole app
 class ErrorBoundary extends Component<{children: ReactNode}, {hasError: boolean}> {
     state = { hasError: false };
     static getDerivedStateFromError(_: Error) { return { hasError: true }; }
@@ -20,7 +18,7 @@ class ErrorBoundary extends Component<{children: ReactNode}, {hasError: boolean}
 // --- SUB-COMPONENT: IMAGE VIEWER (Zoom/Download) ---
 const ImageViewer = ({ src, onClose }: { src: string, onClose: () => void }) => {
     const [scale, setScale] = useState(1);
-    const fullSrc = src.startsWith('data:') || src.startsWith('http') ? src : `http://localhost:3001${src}`;
+    const fullSrc = src.startsWith('data:') || src.startsWith('http') || src.startsWith('/uploads') ? src : `/uploads${src}`;
 
     return (
         <div className="fixed inset-0 z-[9999] bg-black/95 flex flex-col justify-center items-center animate-fadeIn" onClick={(e) => e.target === e.currentTarget && onClose()}>
@@ -73,13 +71,13 @@ const ChatBubble = ({ msg, isMe, role, onImageClick, onDelete }: any) => {
                 <div className="text-sm leading-relaxed">
                     {msg.isImage ? (
                         <img 
-                            src={safeContent.startsWith('data:') ? safeContent : `http://localhost:3001${safeContent}`}
+                            src={safeContent.startsWith('data:') || safeContent.startsWith('/uploads') ? safeContent : `/uploads${safeContent}`}
                             alt="Shared Image" 
                             className="max-w-[240px] rounded-lg cursor-pointer hover:opacity-95 transition-opacity border-2 border-transparent hover:border-white/20" 
                             onClick={() => onImageClick(safeContent)} 
                         />
                     ) : isFile ? (
-                        <a href={safeContent.startsWith('http') ? safeContent : `http://localhost:3001${safeContent}`} download={msg.fileName} className={`flex items-center gap-3 p-2.5 rounded-xl ${isMe ? 'bg-indigo-500 hover:bg-indigo-400' : 'bg-slate-50 hover:bg-slate-100'} transition-colors`}>
+                        <a href={safeContent.startsWith('http') || safeContent.startsWith('/uploads') ? safeContent : `/uploads${safeContent}`} download={msg.fileName} className={`flex items-center gap-3 p-2.5 rounded-xl ${isMe ? 'bg-indigo-500 hover:bg-indigo-400' : 'bg-slate-50 hover:bg-slate-100'} transition-colors`}>
                             <div className="bg-white/20 p-2.5 rounded-lg">
                                 <i className="fas fa-file-alt text-lg"></i>
                             </div>
@@ -117,14 +115,14 @@ const ChatBubble = ({ msg, isMe, role, onImageClick, onDelete }: any) => {
 
 // --- MAIN COMPONENT ---
 const CommunicationHub = ({ store }: any) => {
-    const { state, sendMessage, fetchChat, fetchForum, createThread, createComment } = store; 
-    const [mode, setMode] = useState<'CHAT' | 'FORUM'>('CHAT');
+    const { state, sendMessage, fetchChat, fetchForum, createThread, createComment, 
+            uploadChatImage, uploadForumThreadImage, uploadForumCommentImage,
+            deleteChatMessage, deleteForumThread, deleteForumComment } = store;
     
+    const [mode, setMode] = useState<'CHAT' | 'FORUM'>('CHAT');
     const [msg, setMsg] = useState('');
     const [channel, setChannel] = useState('General');
-
     const [viewImage, setViewImage] = useState<string | null>(null);
-
     const [viewThread, setViewThread] = useState<any>(null);
     const [newThread, setNewThread] = useState({ title: '', content: '' });
     const [newThreadFile, setNewThreadFile] = useState<File | null>(null);
@@ -155,46 +153,25 @@ const CommunicationHub = ({ store }: any) => {
         return () => clearInterval(interval);
     }, [mode, channel]);
 
-    const getAuthToken = () => {
-        let token = state.token || state.currentUser?.token;
-        if (!token) token = localStorage.getItem('token');
-        if (!token) {
-            const userStr = localStorage.getItem('user');
-            if (userStr) {
-                try {
-                    const userObj = JSON.parse(userStr);
-                    token = userObj.token || userObj.accessToken;
-                } catch (e) {}
-            }
-        }
-        if (token && typeof token === 'string' && token.startsWith('"')) token = token.slice(1, -1);
-        return token;
-    };
-
+    // --- HANDLE DELETE WITH CENTRALIZED METHODS ---
     const handleDelete = async (type: 'CHAT' | 'THREAD' | 'COMMENT', id: number) => {
         if (!confirm("Are you sure you want to delete this? It will be removed permanently.")) return;
 
-        const token = getAuthToken();
-        const headers: any = { 'Authorization': token };
-        let url = '';
-
-        if (type === 'CHAT') url = `http://localhost:3001/api/chat/${id}`;
-        else url = `http://localhost:3001/api/forum/${type === 'THREAD' ? 'thread' : 'comment'}/${id}`;
-
         try {
-            const res = await fetch(url, { method: 'DELETE', headers });
-            if (!res.ok) throw new Error("Delete failed");
-            
-            if (type === 'CHAT') fetchChat();
-            else {
-                fetchForum();
-                if (type === 'THREAD') setViewThread(null);
+            if (type === 'CHAT') {
+                await deleteChatMessage(id, currentUser);
+            } else if (type === 'THREAD') {
+                await deleteForumThread(id, currentUser);
+                setViewThread(null);
+            } else if (type === 'COMMENT') {
+                await deleteForumComment(id, currentUser);
             }
-        } catch (err) {
-            alert("Could not delete item.");
+        } catch (err: any) {
+            alert(`Delete failed: ${err.message}`);
         }
     };
 
+    // --- HANDLE CHAT SUBMIT ---
     const handleChatSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         if (msg.trim()) {
@@ -203,83 +180,37 @@ const CommunicationHub = ({ store }: any) => {
         }
     };
 
+    // --- CENTRALIZED FILE UPLOAD HANDLER ---
     const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>, type: 'CHAT' | 'FORUM') => {
         const file = e.target.files?.[0];
         if (!file) return;
 
-        // Fix #1: Strict Check for PNG/JPEG
-        const validTypes = ['image/jpeg', 'image/png', 'image/jpg'];
-        if (!validTypes.includes(file.type)) { 
-            alert("Only JPEG and PNG images are allowed.");
-            e.target.value = ''; 
-            return; 
-        }
-
-        const token = getAuthToken();
-        if (!token) { alert("Authentication Error: Token missing."); return; }
-        
-        const formData = new FormData();
-        formData.append('image', file); 
-        const headers: any = { 'Authorization': token };
-
         try {
             if (type === 'CHAT') {
-                formData.append('senderId', currentUser.id);
-                formData.append('senderName', currentUser.name);
-                formData.append('senderRole', isPM ? 'PM' : 'MEMBER');
-                formData.append('channel', channel);
-                formData.append('isImage', 'true');
-                formData.append('message', file.name);
-
-                await fetch('http://localhost:3001/api/chat', { method: 'POST', headers, body: formData });
-                fetchChat();
-
+                await uploadChatImage(file, channel, currentUser);
             } else if (type === 'FORUM' && viewThread) {
-                formData.append('threadId', viewThread.id);
-                formData.append('authorId', currentUser.id);
-                formData.append('authorName', currentUser.name);
-                formData.append('content', file.name); 
-                formData.append('isImage', 'true');
-
-                await fetch('http://localhost:3001/api/forum/comment', { method: 'POST', headers, body: formData });
-                fetchForum();
-                setTimeout(fetchForum, 500); 
+                await uploadForumCommentImage(file, viewThread.id, currentUser);
             }
+            e.target.value = '';
         } catch (err: any) {
             alert(`Upload failed: ${err.message}`);
+            e.target.value = '';
         }
-        e.target.value = ''; 
     };
 
+    // --- HANDLE CREATE THREAD ---
     const handleCreateThread = async () => {
         if (!newThread.title.trim()) return;
-        const token = getAuthToken();
-        const headers: any = { 'Authorization': token };
-
-        const formData = new FormData();
-        formData.append('authorId', currentUser.id);
-        formData.append('authorName', currentUser.name);
-        formData.append('title', newThread.title);
-        
-        if (newThreadFile) {
-            const validTypes = ['image/jpeg', 'image/png', 'image/jpg'];
-            if (!validTypes.includes(newThreadFile.type)) {
-                 alert("Only JPEG and PNG images are allowed."); return;
-            }
-            formData.append('image', newThreadFile);
-            formData.append('isImage', 'true');
-            formData.append('content', newThreadFile.name); 
-        } else {
-            formData.append('content', newThread.content);
-            formData.append('isImage', 'false');
-        }
 
         try {
-            await fetch('http://localhost:3001/api/forum', { method: 'POST', headers, body: formData });
+            if (newThreadFile) {
+                await uploadForumThreadImage(newThreadFile, newThread.title, newThread.content, currentUser);
+            } else {
+                await createThread(newThread.title, newThread.content, false);
+            }
             setNewThread({ title: '', content: '' });
             setNewThreadFile(null);
             setShowNewTopicModal(false);
-            fetchForum();
         } catch (err: any) {
             alert(`Failed to create topic: ${err.message}`);
         }
@@ -381,7 +312,7 @@ const CommunicationHub = ({ store }: any) => {
                                     {viewThread.isImage ? (
                                         <div className="mt-2">
                                             <img 
-                                                src={viewThread.content.startsWith('data:') ? viewThread.content : `http://localhost:3001${viewThread.content}`}
+                                                src={viewThread.content.startsWith('data:') || viewThread.content.startsWith('/uploads') ? viewThread.content : `/uploads${viewThread.content}`}
                                                 alt="Attachment" 
                                                 className="max-w-full rounded-lg cursor-pointer hover:opacity-95 shadow-sm"
                                                 onClick={() => setViewImage(viewThread.content)} 
@@ -408,7 +339,7 @@ const CommunicationHub = ({ store }: any) => {
                                                 </div>
                                                 {c.isImage ? (
                                                         <img 
-                                                            src={c.content.startsWith('data:') ? c.content : `http://localhost:3001${c.content}`}
+                                                            src={c.content.startsWith('data:') || c.content.startsWith('/uploads') ? c.content : `/uploads${c.content}`}
                                                             alt="Attachment" 
                                                             className="max-w-[150px] rounded-lg mt-2 cursor-pointer hover:opacity-90"
                                                             onClick={() => setViewImage(c.content)} 

@@ -36,7 +36,8 @@ db.exec(`
     status TEXT,
     remarks TEXT,
     holdStartTime TEXT,
-    totalHoldDuration INTEGER DEFAULT 0
+    totalHoldDuration INTEGER DEFAULT 0,
+    scopeStructure TEXT
   );
 
   CREATE TABLE IF NOT EXISTS groupAssignments (
