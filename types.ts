@@ -17,6 +17,7 @@ export interface User {
   isApproved: boolean;
   blackmarks: number;
   bonusPoints: number;
+  isActive?: number;
 }
 
 export interface Team {

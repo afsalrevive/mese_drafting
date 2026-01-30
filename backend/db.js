@@ -15,7 +15,8 @@ db.exec(`
     teamId INTEGER,
     isApproved INTEGER DEFAULT 0,
     blackmarks REAL DEFAULT 0,
-    bonusPoints REAL DEFAULT 0
+    bonusPoints REAL DEFAULT 0,
+    isActive INTEGER DEFAULT 1
   );
 
   CREATE TABLE IF NOT EXISTS teams (
@@ -192,10 +193,10 @@ const checkScopeOverlap = (assignmentScope, reworkScope) => {
 
 // 4. PREPARED STATEMENTS
 const stmts = {
-  login: db.prepare('SELECT * FROM users WHERE username = ? AND isApproved = 1'),
+  login: db.prepare('SELECT * FROM users WHERE username = ? AND isApproved = 1 AND isActive = 1'),
   getUsers: db.prepare('SELECT * FROM users'),
   insertUser: db.prepare('INSERT INTO users (name, username, password, email, roles) VALUES (?, ?, ?, ?, ?)'),
-  updateUser: db.prepare('UPDATE users SET name = COALESCE(?, name), username = COALESCE(?, username), password = COALESCE(?, password), email = COALESCE(?, email), avatar = COALESCE(?, avatar), roles = COALESCE(?, roles), isApproved = COALESCE(?, isApproved), blackmarks = COALESCE(?, blackmarks), bonusPoints = COALESCE(?, bonusPoints), teamId = COALESCE(?, teamId) WHERE id = ?'),
+  updateUser: db.prepare('UPDATE users SET name = COALESCE(?, name), username = COALESCE(?, username), password = COALESCE(?, password), email = COALESCE(?, email), avatar = COALESCE(?, avatar), roles = COALESCE(?, roles), isApproved = COALESCE(?, isApproved), blackmarks = COALESCE(?, blackmarks), bonusPoints = COALESCE(?, bonusPoints), teamId = ?, isActive = COALESCE(?, isActive) WHERE id = ?'),
   deleteUser: db.prepare('DELETE FROM users WHERE id = ?'),
   getWorkTypes: db.prepare("SELECT name FROM work_types ORDER BY name ASC"),
   
@@ -243,7 +244,7 @@ const stmts = {
 
 module.exports = {
   login: (username, password) => { 
-      const user = stmts.login.get(username); 
+      const user = stmts.login.get(username.toLowerCase());
       if (user && bcrypt.compareSync(password, user.password)) {
           user.roles = JSON.parse(user.roles);
           delete user.password; 
@@ -255,17 +256,87 @@ module.exports = {
   
   insertUser: (name, username, password, email, roles) => { 
       const hash = bcrypt.hashSync(password, 10);
-      const result = stmts.insertUser.run(name, username, hash, email, JSON.stringify(roles)); 
+      const result = stmts.insertUser.run(name, username.toLowerCase(), hash, email, JSON.stringify(roles)); 
       return { id: result.lastInsertRowid, name, username, email, roles }; 
   },
   
   updateUser: (id, updates) => { 
+      // 1. Password Handling
       let pwd = updates.password;
       if (pwd && !pwd.startsWith('$2a$')) { pwd = bcrypt.hashSync(pwd, 10); } else { pwd = undefined; }
-      stmts.updateUser.run(safe(updates.name), safe(updates.username), pwd, safe(updates.email), safe(updates.avatar), updates.roles ? JSON.stringify(updates.roles) : null, safe(updates.isApproved), safe(updates.blackmarks), safe(updates.bonusPoints), safeInt(updates.teamId), safeInt(id)); 
+
+      // 2. LOGIC: Check if Team is being changed or User is being Disabled
+      const currentUser = db.prepare('SELECT teamId, isActive FROM users WHERE id = ?').get(id);
+      
+      // TRIGGER: If User is being Disabled OR Removed from a Team
+      const isDisabling = updates.isActive === 0;
+      const isRemovingTeam = (updates.teamId === null || updates.teamId === '') && currentUser.teamId;
+      const isChangingTeam = updates.teamId && currentUser.teamId && parseInt(updates.teamId) !== currentUser.teamId;
+
+      if (isDisabling || isRemovingTeam || isChangingTeam) {
+          // DELETE ACTIVE WORK (So it becomes free for re-allocation)
+          // We keep 'COMPLETED' work for history/stats.
+          db.prepare("DELETE FROM memberAssignments WHERE memberId = ? AND status != 'COMPLETED'").run(id);
+          console.log(`🧹 Active work cleaned up for User ${id}`);
+          
+          // If disabling, force teamId to null
+          if (isDisabling) updates.teamId = null;
+      }
+
+      // 3. Execute Update
+      stmts.updateUser.run(
+          safe(updates.name), 
+          safe(updates.username ? updates.username.toLowerCase() : null), 
+          pwd, 
+          safe(updates.email), 
+          safe(updates.avatar), 
+          updates.roles ? JSON.stringify(updates.roles) : null, 
+          safe(updates.isApproved), 
+          safe(updates.blackmarks), 
+          safe(updates.bonusPoints), 
+          safeInt(updates.teamId), 
+          safe(updates.isActive), // <--- NEW FIELD
+          safeInt(id)
+      ); 
       return { success: true }; 
   },
-  deleteUser: (id) => { stmts.deleteUser.run(id); return { success: true }; },
+  deleteUser: (id) => { 
+      const userId = safeInt(id);
+
+      // Use a Transaction to ensure everything is deleted together
+      const transaction = db.transaction(() => {
+          
+          // 1. Delete all Work Assignments (Member Assignments)
+          db.prepare("DELETE FROM memberAssignments WHERE memberId = ?").run(userId);
+
+          // 2. Delete Notifications belonging to this user
+          db.prepare("DELETE FROM notifications WHERE userId = ?").run(userId);
+          
+          // 3. Delete Chat Messages & Forum Posts (Cleanup references)
+          db.prepare("DELETE FROM chat_messages WHERE senderId = ?").run(userId);
+          db.prepare("DELETE FROM forum_threads WHERE authorId = ?").run(userId);
+          db.prepare("DELETE FROM forum_comments WHERE authorId = ?").run(userId);
+
+          // 4. REMOVE FROM TEAMS (If they are a Team Lead)
+          // We must check all teams, parse their leadIds, and remove this user
+          const teams = db.prepare("SELECT id, leadIds FROM teams").all();
+          teams.forEach(t => {
+              let leads = JSON.parse(t.leadIds || '[]');
+              if (leads.includes(userId)) {
+                  // Filter out the deleted user
+                  leads = leads.filter(lid => lid !== userId);
+                  // Save back to DB
+                  db.prepare("UPDATE teams SET leadIds = ? WHERE id = ?").run(JSON.stringify(leads), t.id);
+              }
+          });
+
+          // 5. Finally, Delete the User Account
+          db.prepare("DELETE FROM users WHERE id = ?").run(userId);
+      });
+
+      transaction();
+      return { success: true }; 
+  },
   
   getTeams: () => stmts.getTeams.all().map(t => ({ ...t, leadIds: JSON.parse(t.leadIds || '[]').map(id => parseInt(id)) })),
   insertTeam: (name, leadIds) => { const result = stmts.insertTeam.run(name, JSON.stringify(leadIds || [])); return { id: result.lastInsertRowid, name, leadIds }; },
@@ -638,8 +709,17 @@ module.exports = {
       return result;
   },
   getReport: (role, userId, startDate, endDate, specificTeamId, specificMemberId) => {
-      let sql = `SELECT p.name as projectName, t.name as teamName, u.name as memberName, ga.teamId, ma.* FROM memberAssignments ma JOIN groupAssignments ga ON ma.groupAssignmentId = ga.id JOIN projects p ON ga.projectId = p.id JOIN teams t ON ga.teamId = t.id JOIN users u ON ma.memberId = u.id WHERE ma.assignedTime BETWEEN ? AND ? `;
+      let sql = `
+          SELECT p.name as projectName, t.name as teamName, u.name as memberName, ga.teamId, ma.* FROM memberAssignments ma 
+          JOIN groupAssignments ga ON ma.groupAssignmentId = ga.id 
+          JOIN projects p ON ga.projectId = p.id 
+          JOIN teams t ON ga.teamId = t.id 
+          JOIN users u ON ma.memberId = u.id 
+          WHERE ma.eta >= ? AND ma.eta <= ? 
+      `;
+      
       const params = [startDate, endDate];
+
       if (role === 'TEAM_LEAD') {
           const user = db.prepare("SELECT teamId FROM users WHERE id = ?").get(userId);
           if(user && user.teamId) { sql += ` AND ga.teamId = ?`; params.push(user.teamId); }
@@ -649,7 +729,8 @@ module.exports = {
           if (specificTeamId) { sql += ` AND ga.teamId = ?`; params.push(specificTeamId); }
       }
       if (specificMemberId) { sql += ` AND ma.memberId = ?`; params.push(specificMemberId); }
-      sql += ` ORDER BY ma.assignedTime DESC`;
+      
+      sql += ` ORDER BY ma.eta ASC`; // Ordered by ETA makes more sense here
       return db.prepare(sql).all(...params).map(r => ({ ...r, scope: JSON.parse(r.scope||'[]') }));
   },
 

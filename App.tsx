@@ -68,31 +68,39 @@ const App: React.FC = () => {
   // --- NEW: REFRESH DATA ON TAB SWITCH ---
   useEffect(() => {
       const refreshData = async () => {
+          // Silent refresh (doesn't trigger loading spinners usually)
           if (currentView === 'home') {
-             // Home usually needs stats and notifications
              await Promise.all([store.fetchStats(), store.fetchNotifications()]);
           } 
           else if (currentView === 'projects') {
-             // Projects needs project list, teams, and assignments
              await Promise.all([
                  store.fetchProjects(), 
                  store.fetchTeams(), 
                  store.fetchGroupAssignments(),
-                 store.fetchMemberAssignments() // If needed for status
+                 store.fetchMemberAssignments()
              ]);
           } 
           else if (currentView === 'reports') {
-             // Reports usually fetches its own data on generate, but we can refresh master data
+             // Reports are usually static until regenerated, but we can fetch master data
              await Promise.all([store.fetchUsers(), store.fetchTeams(), store.fetchProjects()]);
           } 
           else if (currentView === 'connect') {
-             // Connect View handles its own polling, but a meaningful initial fetch helps
              await Promise.all([store.fetchChat(), store.fetchForum()]);
           }
       };
       
+      // 1. Initial Call
       refreshData();
-  }, [currentView, activeRole]); // Run whenever view or role changes
+
+      // 2. 🟢 AUTO-REFRESH TIMER (30 Seconds)
+      const intervalId = setInterval(() => {
+          refreshData();
+      }, 30000); // 30000 ms = 30 seconds
+
+      // Cleanup on unmount or view change
+      return () => clearInterval(intervalId);
+
+  }, [currentView, activeRole]); // Dependencies remain the same
 
   if (!currentUser) {
     return <Auth store={store} />;

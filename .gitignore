@@ -27,6 +27,7 @@ dist-ssr
 **/database.db
 **/sessions.json
 **/.env
+**/*.db
 
 #Folder
 uploads/

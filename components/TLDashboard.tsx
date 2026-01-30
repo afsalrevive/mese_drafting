@@ -110,25 +110,47 @@ const TLDashboard: React.FC<TLDashboardProps> = ({ store, currentView }) => {
       };
   };
 
-  const getFilteredGroups = () => {
-    return state.groupAssignments.filter((ga: GroupAssignment) => {
-       if (ga.teamId !== myTeamId) return false;
-       const proj = state.projects.find(p => p.id === ga.projectId);
-       
-       const isGroupRejected = ga.status === 'REJECTION_REQ' || ga.status === 'REJECTED';
+  // Inside TLDashboard.tsx
 
-       let tabMatch = false;
-       if (filterTab === 'hold') tabMatch = proj?.status === 'ON_HOLD';
-       else if (filterTab === 'completed') tabMatch = ga.status === 'COMPLETED';
-       else if (filterTab === 'rejected') tabMatch = isGroupRejected;
-       else if (filterTab === 'ongoing') tabMatch = ga.status !== 'COMPLETED' && ga.status !== 'REJECTED' && proj?.status !== 'ON_HOLD';
-       else if (filterTab === 'recent') tabMatch = ga.status === 'COMPLETED' && new Date(ga.completionTime!) > new Date(Date.now() - 86400000);
-       
-       if (!tabMatch) return false;
-       if (searchQuery.trim()) return proj?.name.toLowerCase().includes(searchQuery.toLowerCase());
-       return true;
-    });
-  };
+const getFilteredGroups = () => {
+  return state.groupAssignments.filter((ga: GroupAssignment) => {
+     if (ga.teamId !== myTeamId) return false;
+     const proj = state.projects.find(p => p.id === ga.projectId);
+     
+     // Check if any member under this group has submitted work (Waiting for TL)
+     const hasPendingMembers = state.memberAssignments.some((ma: MemberAssignment) => 
+        ma.groupAssignmentId === ga.id && ma.status === 'PENDING_ACK'
+     );
+
+     // Check if the group itself is submitted (Waiting for PM)
+     const isPendingPM = ga.status === 'PENDING_ACK';
+
+     let tabMatch = false;
+     if (filterTab === 'hold') tabMatch = proj?.status === 'ON_HOLD';
+     else if (filterTab === 'completed') tabMatch = ga.status === 'COMPLETED';
+     else if (filterTab === 'rejected') tabMatch = ga.status === 'REJECTION_REQ' || ga.status === 'REJECTED';
+     
+     // 🟢 1. NEW PENDING LOGIC (Shows if EITHER condition is true)
+     else if (filterTab === 'pending') tabMatch = hasPendingMembers || isPendingPM;
+
+     // 🟢 2. ONGOING (Keep as is, or exclude purely pending items if desired. 
+     // Usually, TLs want to see the project in "Ongoing" too if other members are still working)
+     else if (filterTab === 'ongoing') tabMatch = ga.status !== 'COMPLETED' && ga.status !== 'REJECTED' && proj?.status !== 'ON_HOLD';
+     
+     else if (filterTab === 'recent') tabMatch = ga.status === 'COMPLETED' && new Date(ga.completionTime!) > new Date(Date.now() - 86400000);
+     
+     if (!tabMatch) return false;
+     if (searchQuery.trim()) return proj?.name.toLowerCase().includes(searchQuery.toLowerCase());
+     return true;
+  });
+};
+
+const pendingReviewCount = state.memberAssignments.filter((ma: MemberAssignment) => {
+    // We need to find the parent group assignment to verify it belongs to my team
+    const parentGA = state.groupAssignments.find((g: GroupAssignment) => g.id === ma.groupAssignmentId);
+    return parentGA?.teamId === myTeamId && ma.status === 'PENDING_ACK';
+}).length;
+
 
   const handleAllocSubmit = () => {
       // VALIDATION 1: Mandatory Fields
@@ -188,8 +210,14 @@ const TLDashboard: React.FC<TLDashboardProps> = ({ store, currentView }) => {
          <div className="flex flex-col md:flex-row items-start md:items-center gap-4 w-full md:w-auto">
              <h2 className="text-lg font-black text-slate-900 uppercase tracking-wide shrink-0">Work Orders</h2>
              <div className="flex bg-slate-100 p-1 rounded-lg w-full md:w-auto overflow-x-auto">
-                 {['ongoing', 'recent', 'completed', 'hold', 'rejected'].map(t => (
-                     <button key={t} onClick={()=>setFilterTab(t)} className={`flex-1 md:flex-none px-4 py-1.5 rounded-md text-[10px] font-black uppercase transition-all whitespace-nowrap ${filterTab === t ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>{t}</button>
+                 {['ongoing','pending', 'recent', 'completed', 'hold', 'rejected'].map(t => (
+                     <button key={t} onClick={()=>setFilterTab(t)} className={`flex-1 md:flex-none px-4 py-1.5 rounded-md text-[10px] font-black uppercase transition-all whitespace-nowrap ${filterTab === t ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>{t}
+                     {t === 'pending' && pendingReviewCount > 0 && (
+                        <span className="ml-1 bg-amber-500 text-white text-[8px] px-1.5 py-0.5 rounded-full shadow-sm">
+                            {pendingReviewCount}
+                        </span>
+                    )}
+                    </button>
                  ))}
              </div>
          </div>

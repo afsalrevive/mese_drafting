@@ -317,29 +317,41 @@ const PMDashboard: React.FC<PMDashboardProps> = ({ store, currentView }) => {
   };
 
   const getFilteredProjects = () => {
-    return state.projects.filter((p: Project) => {
-        const stats = getProjectStats(p);
-        let tabMatch = false;
+  return state.projects.filter((p: Project) => {
+      const stats = getProjectStats(p);
+      let tabMatch = false;
 
-        // Check if this project has any assignments with Rejection status/requests
-        const hasRejections = state.groupAssignments.some((ga: GroupAssignment) => 
-            ga.projectId === p.id && (ga.status === 'REJECTION_REQ' || ga.status === 'REJECTED')
-        );
+      const hasRejections = state.groupAssignments.some((ga: GroupAssignment) => 
+          ga.projectId === p.id && (ga.status === 'REJECTION_REQ' || ga.status === 'REJECTED')
+      );
 
-        if (filterTab === 'hold') tabMatch = p.status === 'ON_HOLD';
-        else if (filterTab === 'completed') tabMatch = stats.progress >= 100 && p.status !== 'ON_HOLD';
-        else if (filterTab === 'ongoing') tabMatch = stats.progress < 100 && p.status !== 'ON_HOLD';
-        else if (filterTab === 'recent') tabMatch = stats.progress >= 100;
-        else if (filterTab === 'rejected') tabMatch = hasRejections; // <--- NEW TAB LOGIC
-        
-        if (!tabMatch) return false;
-        if (searchQuery.trim()) {
-            const query = searchQuery.toLowerCase();
-            return p.name.toLowerCase().includes(query);
-        }
-        return true;
-    });
-  };
+      // 🟢 Check for Pending Group Assignments (Teams waiting for PM)
+      const hasPendingReviews = state.groupAssignments.some((ga: GroupAssignment) => 
+          ga.projectId === p.id && ga.status === 'PENDING_ACK'
+      );
+
+      if (filterTab === 'hold') tabMatch = p.status === 'ON_HOLD';
+      else if (filterTab === 'completed') tabMatch = stats.progress >= 100 && p.status !== 'ON_HOLD';
+      
+      // 🟢 1. NEW PENDING TAB
+      else if (filterTab === 'pending') tabMatch = hasPendingReviews;
+
+      else if (filterTab === 'ongoing') tabMatch = stats.progress < 100 && p.status !== 'ON_HOLD';
+      else if (filterTab === 'recent') tabMatch = stats.progress >= 100;
+      else if (filterTab === 'rejected') tabMatch = hasRejections; 
+      
+      if (!tabMatch) return false;
+      if (searchQuery.trim()) {
+          const query = searchQuery.toLowerCase();
+          return p.name.toLowerCase().includes(query);
+      }
+      return true;
+  });
+};
+
+const pendingApprovalCount = state.groupAssignments.filter((ga: GroupAssignment) => 
+    ga.status === 'PENDING_ACK'
+).length;
 
   // ----------------------------------------------------------------------
   // HANDLERS
@@ -602,8 +614,14 @@ const PMDashboard: React.FC<PMDashboardProps> = ({ store, currentView }) => {
             <h2 className="text-lg font-black text-slate-900 uppercase tracking-wide shrink-0">Project Management</h2>
             {/* Tabs: Horizontal scroll on mobile */}
             <div className="flex bg-slate-100 p-1 rounded-lg w-full md:w-auto overflow-x-auto">
-                {['ongoing', 'recent', 'completed', 'hold'].map(t => (
-                    <button key={t} onClick={()=>{setFilterTab(t); setActiveProjectId(null);}} className={`flex-1 md:flex-none px-4 py-1.5 rounded-md text-[10px] font-black uppercase transition-all whitespace-nowrap ${filterTab === t ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>{t}</button>
+                {['ongoing','pending', 'recent', 'completed', 'hold'].map(t => (
+                    <button key={t} onClick={()=>{setFilterTab(t); setActiveProjectId(null);}} className={`flex-1 md:flex-none px-4 py-1.5 rounded-md text-[10px] font-black uppercase transition-all whitespace-nowrap ${filterTab === t ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>{t}
+                    {t === 'pending' && pendingApprovalCount > 0 && (
+                        <span className="ml-1 bg-amber-500 text-white text-[8px] px-1.5 py-0.5 rounded-full shadow-sm">
+                            {pendingApprovalCount}
+                        </span>
+                    )}
+                    </button>
                 ))}
             </div>
         </div>

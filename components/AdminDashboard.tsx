@@ -10,6 +10,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ store, currentView }) =
   const { state, approveUser, createTeam, assignUserToTeam, addWorkType, removeWorkType, updateWorkType, updateUser, deleteUser, updateConfig } = store;
   
   const [activeTab, setActiveTab] = useState<'staff' | 'teams' | 'config'>('staff');
+  const [staffTab, setStaffTab] = useState<'active' | 'disabled'>('active');
   
   const [newTeamName, setNewTeamName] = useState('');
   const [newWorkType, setNewWorkType] = useState('');
@@ -174,13 +175,136 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ store, currentView }) =
           </div>
           <div className="lg:col-span-2">
             <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-               <div className="bg-slate-50 px-6 py-4 border-b border-slate-200"><h2 className="font-bold text-slate-800">Active Staff List</h2></div>
-               <div className="overflow-x-auto">
+              {/* HEADER WITH TABS */}
+              <div className="bg-slate-50 px-6 py-4 border-b border-slate-200 flex justify-between items-center">
+                  <h2 className="font-bold text-slate-800">Staff Management</h2>
+                  <div className="flex bg-white border border-slate-200 p-0.5 rounded-lg">
+                      <button 
+                          onClick={() => setStaffTab('active')} 
+                          className={`px-3 py-1 text-[10px] font-black uppercase tracking-widest rounded-md transition-all ${staffTab==='active' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                      >
+                          Active
+                      </button>
+                      <button 
+                          onClick={() => setStaffTab('disabled')} 
+                          className={`px-3 py-1 text-[10px] font-black uppercase tracking-widest rounded-md transition-all ${staffTab==='disabled' ? 'bg-red-500 text-white shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                      >
+                          Disabled
+                      </button>
+                  </div>
+              </div>
+
+              {/* TABLE */}
+              <div className="overflow-x-auto">
                   <table className="w-full text-left text-xs">
-                    <thead className="bg-slate-50 text-slate-400 uppercase font-black border-b tracking-widest"><tr><th className="px-6 py-4">Name / ID</th><th className="px-6 py-4">Roles</th><th className="px-6 py-4">Team</th><th className="px-6 py-4 text-right">Actions</th></tr></thead>
-                    <tbody className="divide-y divide-slate-100">{approvedUsers.map((user: User) => (<tr key={user.id} className="hover:bg-slate-50/50 group transition-colors"><td className="px-6 py-4"><p className="font-bold text-slate-800">{user.name}</p><p className="text-[10px] text-slate-400 font-bold tracking-tighter">@{user.username}</p></td><td className="px-6 py-4"><div className="flex flex-wrap gap-1">{user.roles.map(role => (<span key={role} className="bg-slate-100 px-2 py-0.5 rounded text-[8px] font-black uppercase text-slate-600 border border-slate-200">{role.replace('_', ' ')}</span>))}</div></td><td className="px-6 py-4"><span className={`font-medium px-2 py-0.5 rounded border ${user.teamId ? 'bg-indigo-50 text-indigo-700 border-indigo-100' : 'bg-slate-100 text-slate-500 border-slate-200'}`}>{state.teams.find((t: any) => t.id === user.teamId)?.name || 'Unallocated'}</span></td><td className="px-6 py-4 text-right"><button onClick={() => setEditingUser(user)} className="text-indigo-600 opacity-0 group-hover:opacity-100 hover:bg-indigo-50 p-2 rounded-lg transition-all"><i className="fas fa-edit text-lg"></i></button></td></tr>))}</tbody>
+                    <thead className="bg-slate-50 text-slate-400 uppercase font-black border-b tracking-widest">
+                        <tr>
+                            <th className="px-6 py-4">Name / ID</th>
+                            <th className="px-6 py-4">Roles</th>
+                            <th className="px-6 py-4">Team</th>
+                            <th className="px-6 py-4 text-right">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {approvedUsers
+                        // 🟢 FILTER: Check isActive based on the selected tab
+                        .filter((u: User) => staffTab === 'active' ? (u.isActive !== 0) : (u.isActive === 0))
+                        .map((user: User) => (
+                        <tr key={user.id} className="hover:bg-slate-50/50 group transition-colors">
+                            <td className="px-6 py-4">
+                                <p className={`font-bold ${user.isActive===0 ? 'text-slate-400 line-through' : 'text-slate-800'}`}>{user.name}</p>
+                                <p className="text-[10px] text-slate-400 font-bold tracking-tighter">@{user.username}</p>
+                            </td>
+                            <td className="px-6 py-4">
+                                <div className="flex flex-wrap gap-1">
+                                    {user.roles.map(role => (
+                                        <span key={role} className="bg-slate-100 px-2 py-0.5 rounded text-[8px] font-black uppercase text-slate-600 border border-slate-200">{role.replace('_', ' ')}</span>
+                                    ))}
+                                </div>
+                            </td>
+                            <td className="px-6 py-4">
+                                <span className={`font-medium px-2 py-0.5 rounded border ${user.teamId ? 'bg-indigo-50 text-indigo-700 border-indigo-100' : 'bg-slate-100 text-slate-500 border-slate-200'}`}>
+                                    {state.teams.find((t: any) => t.id === user.teamId)?.name || 'Unallocated'}
+                                </span>
+                            </td>
+                            <td className="px-6 py-4 text-right flex justify-end gap-2 items-center">
+                                
+                                {staffTab === 'active' ? (
+                                    <>
+                                        {/* EDIT */}
+                                        <button onClick={() => setEditingUser(user)} className="text-indigo-600 hover:bg-indigo-50 p-2 rounded-lg transition-all" title="Edit User">
+                                            <i className="fas fa-edit"></i>
+                                        </button>
+
+                                        {/* REMOVE TEAM (Only if in a team) */}
+                                        {user.teamId && (
+                                            <button 
+                                                onClick={() => {
+                                                    if(window.confirm(`Remove ${user.name} from their team? Active work will be DELETED.`)) {
+                                                        updateUser(user.id, { teamId: null });
+                                                    }
+                                                }}
+                                                className="text-amber-500 hover:bg-amber-50 p-2 rounded-lg transition-all"
+                                                title="Remove from Team"
+                                            >
+                                                <i className="fas fa-user-minus"></i>
+                                            </button>
+                                        )}
+
+                                        {/* DISABLE */}
+                                        <button 
+                                            onClick={() => {
+                                                if(window.confirm(`DISABLE ${user.name}?\n\n- They will be hidden from teams.\n- All active work will be DELETED.\n- They cannot login.`)) {
+                                                    updateUser(user.id, { isActive: 0 });
+                                                }
+                                            }} 
+                                            className="text-slate-300 hover:text-red-500 hover:bg-red-50 p-2 rounded-lg transition-all"
+                                            title="Disable / Block User"
+                                        >
+                                            <i className="fas fa-ban"></i>
+                                        </button>
+                                    </>
+                                ) : (
+                                    /* ACTIVATE BUTTON (For Disabled Tab) */
+                                    <button 
+                                        onClick={() => {
+                                            if(window.confirm(`Re-activate ${user.name}?`)) {
+                                                updateUser(user.id, { isActive: 1 });
+                                            }
+                                        }} 
+                                        className="bg-emerald-100 text-emerald-700 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest hover:bg-emerald-200 shadow-sm"
+                                    >
+                                        <i className="fas fa-check-circle mr-1"></i> Activate
+                                    </button>
+                                    
+                                )}
+                                <button 
+                                  onClick={() => {
+                                      if(window.confirm(`⚠️ PERMANENTLY DELETE ${user.name}?\n\nThis action cannot be undone.\n\n- All assigned work will be deleted.\n- Chat history & forum posts will be removed.\n- They will be unallocated from all teams.`)) {
+                                          // Call the delete function
+                                          deleteUser(user.id);
+                                      }
+                                  }} 
+                                  className="ml-2 w-8 h-8 rounded-lg bg-white border border-slate-200 text-slate-300 hover:text-red-600 hover:border-red-200 hover:bg-red-50 transition-all flex items-center justify-center"
+                                  title="Permanently Delete from Database"
+                              >
+                                  <i className="fas fa-trash-alt"></i>
+                              </button>
+                            </td>
+                        </tr>
+                      ))}
+                      
+                      {/* EMPTY STATE */}
+                      {approvedUsers.filter((u: User) => staffTab === 'active' ? (u.isActive !== 0) : (u.isActive === 0)).length === 0 && (
+                          <tr>
+                              <td colSpan={4} className="p-8 text-center text-slate-400 text-xs italic">
+                                  No {staffTab} staff found.
+                              </td>
+                          </tr>
+                      )}
+                    </tbody>
                   </table>
-               </div>
+              </div>
             </div>
           </div>
         </div>
@@ -419,11 +543,35 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ store, currentView }) =
             <div className="p-8 space-y-8">
               <div>
                  <div className="flex justify-between items-center mb-4"><label className="text-[10px] font-black uppercase text-indigo-500 tracking-widest">Existing Team Leads</label><span className="text-[10px] font-bold text-slate-400">{currentTeamLeads.length} Assigned</span></div>
-                 <div className="space-y-2">{currentTeamLeads.length === 0 ? (<div className="p-4 border border-dashed border-slate-200 rounded-xl text-center text-slate-400 italic text-sm">No leads currently assigned.</div>) : (currentTeamLeads.map(lead => (<div key={lead.id} className="flex items-center justify-between p-3 rounded-xl border border-indigo-100 bg-indigo-50/20"><div className="flex items-center gap-3"><div className="w-8 h-8 rounded-lg bg-indigo-600 text-white flex items-center justify-center font-black text-xs">{(lead.name || 'U').charAt(0)}</div><div><p className="text-sm font-bold text-slate-900">{lead.name}</p><p className="text-[10px] text-slate-500 font-bold">@{lead.username}</p></div></div><button onClick={() => removeFromTeam(lead.id)} className="text-xs font-bold text-red-400 hover:text-red-600 px-3 py-1 bg-white rounded border border-slate-100 shadow-sm hover:shadow">Remove</button></div>)))}</div>
+                 <div className="space-y-2">{currentTeamLeads.length === 0 ? (<div className="p-4 border border-dashed border-slate-200 rounded-xl text-center text-slate-400 italic text-sm">No leads currently assigned.</div>) : (currentTeamLeads.map(lead => (<div key={lead.id} className="flex items-center justify-between p-3 rounded-xl border border-indigo-100 bg-indigo-50/20"><div className="flex items-center gap-3"><div className="w-8 h-8 rounded-lg bg-indigo-600 text-white flex items-center justify-center font-black text-xs">{(lead.name || 'U').charAt(0)}</div><div><p className="text-sm font-bold text-slate-900">{lead.name}</p><p className="text-[10px] text-slate-500 font-bold">@{lead.username}</p></div></div>
+                 <button 
+                    onClick={() => {
+                        if(window.confirm(`Remove Lead ${lead.name} from this team?\n\nWARNING: Their active allocated work will be DELETED.`)) {
+                            removeFromTeam(lead.id);
+                        }
+                    }} 
+                    className="text-xs font-bold text-red-400 hover:text-red-600 px-3 py-1 bg-white rounded border border-slate-100 shadow-sm hover:shadow"
+                >
+                    Remove
+                  </button>
+                  </div>)))}
+                </div>
               </div>
               <div>
                  <div className="flex justify-between items-center mb-4"><label className="text-[10px] font-black uppercase text-indigo-500 tracking-widest">Existing Members</label><span className="text-[10px] font-bold text-slate-400">{currentTeamMembers.length} Assigned</span></div>
-                 <div className="space-y-2 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">{currentTeamMembers.length === 0 ? (<div className="p-4 border border-dashed border-slate-200 rounded-xl text-center text-slate-400 italic text-sm">No members currently assigned.</div>) : (currentTeamMembers.map(member => (<div key={member.id} className="flex items-center justify-between p-3 rounded-xl border border-slate-200 bg-white"><div className="flex items-center gap-3"><div className="w-8 h-8 rounded-lg bg-slate-100 text-slate-500 flex items-center justify-center font-black text-xs">{(member.name || 'U').charAt(0)}</div><div><p className="text-sm font-bold text-slate-900">{member.name}</p><div className="flex gap-2"><span className="text-[10px] text-slate-500 font-bold">@{member.username}</span>{member.roles.includes(UserRole.TEAM_LEAD) && <span className="text-[8px] bg-indigo-100 text-indigo-600 px-1 rounded uppercase font-bold">Lead Role</span>}</div></div></div><button onClick={() => removeFromTeam(member.id)} className="text-xs font-bold text-red-400 hover:text-red-600 px-3 py-1 bg-slate-50 rounded border border-slate-100 hover:bg-red-50">Remove</button></div>)))}</div>
+                 <div className="space-y-2 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">{currentTeamMembers.length === 0 ? (<div className="p-4 border border-dashed border-slate-200 rounded-xl text-center text-slate-400 italic text-sm">No members currently assigned.</div>) : (currentTeamMembers.map(member => (<div key={member.id} className="flex items-center justify-between p-3 rounded-xl border border-slate-200 bg-white"><div className="flex items-center gap-3"><div className="w-8 h-8 rounded-lg bg-slate-100 text-slate-500 flex items-center justify-center font-black text-xs">{(member.name || 'U').charAt(0)}</div><div><p className="text-sm font-bold text-slate-900">{member.name}</p><div className="flex gap-2"><span className="text-[10px] text-slate-500 font-bold">@{member.username}</span>{member.roles.includes(UserRole.TEAM_LEAD) && <span className="text-[8px] bg-indigo-100 text-indigo-600 px-1 rounded uppercase font-bold">Lead Role</span>}</div></div></div>
+                 <button 
+                      onClick={() => {
+                          if(window.confirm(`Remove ${member.name} from this team?\n\nWARNING: Their active allocated work will be DELETED.`)) {
+                              removeFromTeam(member.id);
+                          }
+                      }} 
+                      className="text-xs font-bold text-red-400 hover:text-red-600 px-3 py-1 bg-slate-50 rounded border border-slate-100 hover:bg-red-50"
+                  >
+                      Remove
+                  </button>
+                  </div>)))}
+                </div>
               </div>
               <div className="pt-4 border-t border-slate-100"><button onClick={() => setShowAddUserModal(true)} className="w-full py-4 rounded-xl border-2 border-dashed border-slate-300 text-slate-500 font-bold text-sm hover:border-indigo-500 hover:text-indigo-600 hover:bg-indigo-50 transition-all flex items-center justify-center gap-2"><i className="fas fa-plus-circle"></i> Add Leads or Members</button></div>
             </div>

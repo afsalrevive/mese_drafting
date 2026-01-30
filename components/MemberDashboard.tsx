@@ -32,24 +32,36 @@ const MemberDashboard: React.FC<MemberDashboardProps> = ({ store, currentView })
     }
   }, [selectedAssignment]);
 
-  const getFilteredTasks = () => {
-     return state.memberAssignments.filter((ma: MemberAssignment) => {
-        if (ma.memberId !== state.currentUser?.id) return false;
-        const ga = state.groupAssignments.find(g => g.id === ma.groupAssignmentId);
-        const proj = state.projects.find(p => p.id === ga?.projectId);
+  // Inside MemberDashboard.tsx
 
-        let tabMatch = false;
-        if (filterTab === 'hold') tabMatch = proj?.status === 'ON_HOLD';
-        else if (filterTab === 'completed') tabMatch = ma.status === 'COMPLETED';
-        else if (filterTab === 'rejected') tabMatch = ma.status === 'REJECTED' || ma.status === 'REJECTION_REQ';
-        else if (filterTab === 'ongoing') tabMatch = ma.status !== 'COMPLETED' && ma.status !== 'REJECTED' && proj?.status !== 'ON_HOLD';
-        else if (filterTab === 'recent') tabMatch = ma.status === 'COMPLETED' && new Date(ma.completionTime!) > new Date(Date.now() - 86400000);
-        
-        if (!tabMatch) return false;
-        if (searchQuery.trim()) return proj?.name.toLowerCase().includes(searchQuery.toLowerCase());
-        return true;
-     });
-  };
+const getFilteredTasks = () => {
+    return state.memberAssignments.filter((ma: MemberAssignment) => {
+       if (ma.memberId !== state.currentUser?.id) return false;
+       const ga = state.groupAssignments.find(g => g.id === ma.groupAssignmentId);
+       const proj = state.projects.find(p => p.id === ga?.projectId);
+
+       let tabMatch = false;
+       if (filterTab === 'hold') tabMatch = proj?.status === 'ON_HOLD';
+       else if (filterTab === 'completed') tabMatch = ma.status === 'COMPLETED';
+       else if (filterTab === 'rejected') tabMatch = ma.status === 'REJECTED' || ma.status === 'REJECTION_REQ';
+       
+       // 🟢 1. NEW PENDING TAB LOGIC
+       else if (filterTab === 'pending') tabMatch = ma.status === 'PENDING_ACK';
+
+       // 🟢 2. UPDATE ONGOING LOGIC (Exclude PENDING_ACK)
+       else if (filterTab === 'ongoing') {
+           tabMatch = ma.status !== 'COMPLETED' && 
+                      ma.status !== 'REJECTED' && 
+                      ma.status !== 'PENDING_ACK' && // Exclude pending
+                      proj?.status !== 'ON_HOLD';
+       }
+       else if (filterTab === 'recent') tabMatch = ma.status === 'COMPLETED' && new Date(ma.completionTime!) > new Date(Date.now() - 86400000);
+       
+       if (!tabMatch) return false;
+       if (searchQuery.trim()) return proj?.name.toLowerCase().includes(searchQuery.toLowerCase());
+       return true;
+    });
+ };
 
   const [fileToUpload, setFileToUpload] = useState<File | null>(null);
 
@@ -92,8 +104,12 @@ const MemberDashboard: React.FC<MemberDashboardProps> = ({ store, currentView })
          <div className="flex flex-col md:flex-row items-start md:items-center gap-4 w-full md:w-auto">
              <h2 className="text-lg font-black text-slate-900 uppercase tracking-wide shrink-0">My Tasks</h2>
              <div className="flex bg-slate-100 p-1 rounded-lg w-full md:w-auto overflow-x-auto">
-                 {['ongoing', 'recent', 'completed', 'hold','rejected'].map(t => (
-                     <button key={t} onClick={()=>setFilterTab(t)} className={`flex-1 md:flex-none px-4 py-1.5 rounded-md text-[10px] font-black uppercase transition-all whitespace-nowrap ${filterTab === t ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>{t}</button>
+                 {['ongoing', 'pending', 'recent', 'completed', 'hold','rejected'].map(t => (
+                     <button key={t} onClick={()=>setFilterTab(t)} className={`flex-1 md:flex-none px-4 py-1.5 rounded-md text-[10px] font-black uppercase transition-all whitespace-nowrap ${filterTab === t ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>{t}
+                     {t === 'pending' && state.memberAssignments.filter((m:any) => m.memberId === state.currentUser?.id && m.status === 'PENDING_ACK').length > 0 && 
+                            <span className="ml-1 bg-amber-500 text-white text-[8px] px-1 rounded-full">{state.memberAssignments.filter((m:any) => m.memberId === state.currentUser?.id && m.status === 'PENDING_ACK').length}</span>
+                        }
+                    </button>
                  ))}
              </div>
          </div>
