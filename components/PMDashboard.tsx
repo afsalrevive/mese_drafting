@@ -12,6 +12,7 @@ const PMDashboard: React.FC<PMDashboardProps> = ({ store, currentView }) => {
   // ----------------------------------------------------------------------
   const [filterTab, setFilterTab] = useState('ongoing'); 
   const [searchQuery, setSearchQuery] = useState('');
+  const [viewRejection, setViewRejection] = useState<GroupAssignment | null>(null);
   
   // Split Screen Selection
   const [activeProjectId, setActiveProjectId] = useState<number | null>(null);
@@ -250,7 +251,7 @@ const PMDashboard: React.FC<PMDashboardProps> = ({ store, currentView }) => {
 
   // --- VISUAL STATUS BAR ---
   const getDivisionStatus = (p: Project, divName: string) => {
-      const assigns = state.groupAssignments.filter((ga: GroupAssignment) => ga.projectId === p.id);
+      const assigns = state.groupAssignments.filter((ga: GroupAssignment) => ga.projectId === p.id && ga.status !== 'REJECTED');
       
       // 1. Unallocated (Grey)
       const isAllocated = assigns.some(ga => ga.scope?.some(s => s.division === divName));
@@ -277,7 +278,7 @@ const PMDashboard: React.FC<PMDashboardProps> = ({ store, currentView }) => {
       const itemStatusMap = new Map<string, boolean[]>();
       const allocatedSet = new Set<string>();
 
-      const projectAssignments = state.groupAssignments.filter((ga: GroupAssignment) => ga.projectId === p.id);
+      const projectAssignments = state.groupAssignments.filter((ga: GroupAssignment) => ga.projectId === p.id && ga.status !== 'REJECTED');
 
       projectAssignments.forEach(ga => {
           const isGaComplete = ga.status === 'COMPLETED';
@@ -520,9 +521,10 @@ const pendingApprovalCount = state.groupAssignments.filter((ga: GroupAssignment)
       return null;
   };
   const getStatusColor = (p: Project, div: string, part: string, wt: string) => {
-      const assigns = state.groupAssignments.filter((ga: GroupAssignment) => 
-          ga.projectId === p.id && 
-          ga.scope?.some(s => s.division === div && s.parts.some(pt => pt.name === part && pt.workTypes.includes(wt)))
+    const assigns = state.groupAssignments.filter((ga: GroupAssignment) => 
+        ga.projectId === p.id && 
+        ga.status !== 'REJECTED' &&
+        ga.scope?.some(s => s.division === div && s.parts.some(pt => pt.name === part && pt.workTypes.includes(wt)))
       );
       if (assigns.length === 0) return 'bg-slate-200 text-slate-400 border-slate-300'; // Unallocated (Grey)
       const isComplete = assigns.every((ga: GroupAssignment) => ga.status === 'COMPLETED');
@@ -870,25 +872,22 @@ const pendingApprovalCount = state.groupAssignments.filter((ga: GroupAssignment)
                                     <span className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase ${ga.status==='COMPLETED'?'bg-green-100 text-green-700':ga.status==='PENDING_ACK'?'bg-amber-100 text-amber-700':'bg-slate-200 text-slate-500'}`}>{ga.status.replace('_',' ')}</span>
                                     
                                     {ga.status === 'REJECTION_REQ' && (
-                                            <>
-                                                <button 
-                                                    onClick={() => {
-                                                        if(confirm("Accept Rejection? This will mark the task as unallocated.")) {
-                                                            updateGroupAssignment(ga.id, { status: 'REJECTED', rejectionReason: ga.rejectionReason + " [Accepted by PM]" });
-                                                        }
-                                                    }} 
-                                                    className="bg-red-600 text-white px-3 py-1 rounded text-[10px] font-bold shadow-sm hover:bg-red-700"
-                                                >
-                                                    Accept
-                                                </button>
-                                                <button 
-                                                    onClick={() => updateGroupAssignment(ga.id, { status: 'IN_PROGRESS', rejectionReason: null })} 
-                                                    className="bg-white border border-slate-300 text-slate-600 px-3 py-1 rounded text-[10px] font-bold hover:bg-slate-50"
-                                                >
-                                                    Revoke
-                                                </button>
-                                            </>
-                                        )}
+                                        <>
+                                            <button 
+                                                onClick={() => setViewRejection(ga)} 
+                                                className="bg-red-600 text-white px-3 py-1 rounded text-[10px] font-bold shadow-sm hover:bg-red-700"
+                                            >
+                                                Review Rejection
+                                            </button>
+                                            
+                                            <button 
+                                                onClick={() => updateGroupAssignment(ga.id, { status: 'IN_PROGRESS', rejectionReason: null })} 
+                                                className="bg-white border border-slate-300 text-slate-600 px-3 py-1 rounded text-[10px] font-bold hover:bg-slate-50"
+                                            >
+                                                Revoke
+                                            </button>
+                                        </>
+                                    )}
 
                                     {ga.status === 'PENDING_ACK' && <button onClick={()=>setReviewId(ga.id)} className="bg-green-600 text-white px-3 py-1 rounded text-[10px] font-bold shadow-sm">Review</button>}
                                     
@@ -994,12 +993,20 @@ const pendingApprovalCount = state.groupAssignments.filter((ga: GroupAssignment)
                                   <button type="button" onClick={addGeneratedDivs} className="flex-1 bg-slate-800 text-white rounded-lg text-[10px] font-bold shadow-md hover:bg-slate-700">Generate</button>
                               </div>
                               <div className="flex gap-2">
-                                  <input className="flex-1 p-2 text-[10px] border rounded-lg font-bold" placeholder="Manual Add" value={projForm.manualDiv} onChange={e=>setProjForm({...projForm, manualDiv: e.target.value})} />
-                                  <button type="button" onClick={addManualDiv} className="bg-white border px-3 rounded-lg text-[10px] font-bold hover:bg-slate-50">+</button>
-                              </div>
-                              <div className="flex flex-wrap gap-1 max-h-32 overflow-y-auto">
-                                  {projForm.divisions.map(d => <span key={d} onClick={() => removeDiv(d)} className="cursor-pointer text-[10px] bg-white border border-slate-200 px-2 py-0.5 rounded-md font-bold text-slate-600 hover:bg-red-50 hover:text-red-500 hover:border-red-200">{d}</span>)}
-                              </div>
+                                <input className="flex-1 p-2 text-[10px] border rounded-lg font-bold" placeholder="Manual Add" value={projForm.manualDiv} onChange={e=>setProjForm({...projForm, manualDiv: e.target.value})} />
+                                <button type="button" onClick={addManualDiv} className="bg-white border px-3 rounded-lg text-[10px] font-bold hover:bg-slate-50">+</button>
+                            </div>
+
+                            {/* 🟢 FIX: Dedicated Scroll Wrapper + Inner Flex Container */}
+                            <div className="max-h-[150px] overflow-y-auto custom-scrollbar border border-slate-100 bg-white p-2 rounded-lg mt-2">
+                                <div className="flex flex-wrap gap-1">
+                                    {projForm.divisions.map(d => (
+                                        <span key={d} onClick={() => removeDiv(d)} className="cursor-pointer text-[10px] bg-slate-50 border border-slate-200 px-2 py-0.5 rounded-md font-bold text-slate-600 hover:bg-red-50 hover:text-red-500 hover:border-red-200">
+                                            {d}
+                                        </span>
+                                    ))}
+                                </div>
+                            </div>
                            </div>
 
                            {/* PARTS */}
@@ -1012,21 +1019,37 @@ const pendingApprovalCount = state.groupAssignments.filter((ga: GroupAssignment)
                                   <button type="button" onClick={addGeneratedParts} className="flex-1 bg-slate-800 text-white rounded-lg text-[10px] font-bold shadow-md hover:bg-slate-700">Generate</button>
                               </div>
                               <div className="flex gap-2">
-                                  <input className="flex-1 p-2 text-[10px] border rounded-lg font-bold" placeholder="Manual Add" value={projForm.manualPart} onChange={e=>setProjForm({...projForm, manualPart: e.target.value})} />
-                                  <button type="button" onClick={addManualPart} className="bg-white border px-3 rounded-lg text-[10px] font-bold hover:bg-slate-50">+</button>
-                              </div>
-                              <div className="flex flex-wrap gap-1 max-h-32 overflow-y-auto">
-                                  {projForm.partNos.map(p => <span key={p} onClick={() => removePart(p)} className="cursor-pointer text-[10px] bg-white border border-slate-200 px-2 py-0.5 rounded-md font-bold text-slate-600 hover:bg-red-50 hover:text-red-500 hover:border-red-200">{p}</span>)}
-                              </div>
+                                <input className="flex-1 p-2 text-[10px] border rounded-lg font-bold" placeholder="Manual Add" value={projForm.manualPart} onChange={e=>setProjForm({...projForm, manualPart: e.target.value})} />
+                                <button type="button" onClick={addManualPart} className="bg-white border px-3 rounded-lg text-[10px] font-bold hover:bg-slate-50">+</button>
+                            </div>
+
+                            {/* 🟢 FIX: Dedicated Scroll Wrapper + Inner Flex Container */}
+                            <div className="max-h-[150px] overflow-y-auto custom-scrollbar border border-slate-100 bg-white p-2 rounded-lg mt-2">
+                                <div className="flex flex-wrap gap-1">
+                                    {projForm.partNos.map(p => (
+                                        <span key={p} onClick={() => removePart(p)} className="cursor-pointer text-[10px] bg-slate-50 border border-slate-200 px-2 py-0.5 rounded-md font-bold text-slate-600 hover:bg-red-50 hover:text-red-500 hover:border-red-200">
+                                            {p}
+                                        </span>
+                                    ))}
+                                </div>
+                            </div>
                            </div>
 
                            {/* WORK TYPES */}
                            <div className="space-y-2">
-                                <label className="text-[10px] font-black uppercase text-slate-400">Required Work Types</label>
-                                <div className="flex flex-wrap gap-2">
-                                    {state.workTypes.map((w: string) => (
-                                        <button type="button" key={w} onClick={()=>setProjForm(prev => ({...prev, workTypes: toggleList(prev.workTypes, w)}))} className={`px-3 py-1.5 rounded-lg text-[10px] font-bold border transition-all ${projForm.workTypes.includes(w)?'bg-indigo-600 text-white border-indigo-600 shadow-md':'bg-white text-slate-500 border-slate-200 hover:border-indigo-300'}`}>{w}</button>
-                                    ))}
+                                <div className="space-y-2">
+                                    <label className="text-[10px] font-black uppercase text-slate-400">Required Work Types</label>
+                                    
+                                    {/* 🟢 FIX: Dedicated Scroll Wrapper */}
+                                    <div className="max-h-[150px] overflow-y-auto custom-scrollbar border border-slate-100 p-2 rounded-xl bg-slate-50">
+                                        <div className="flex flex-wrap gap-2">
+                                            {state.workTypes.map((w: string) => (
+                                                <button type="button" key={w} onClick={()=>setProjForm(prev => ({...prev, workTypes: toggleList(prev.workTypes, w)}))} className={`px-3 py-1.5 rounded-lg text-[10px] font-bold border transition-all ${projForm.workTypes.includes(w)?'bg-indigo-600 text-white border-indigo-600 shadow-md':'bg-white text-slate-500 border-slate-200 hover:border-indigo-300'}`}>
+                                                    {w}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
                                 </div>
                            </div>
                         </form>
@@ -1040,8 +1063,11 @@ const pendingApprovalCount = state.groupAssignments.filter((ga: GroupAssignment)
                              {/* Selectors */}
                             <div className="flex-1 grid grid-cols-3 gap-3 h-full">
                                 {/* 1. Div Selector */}
-                                <div className="bg-white border border-indigo-100 rounded-2xl p-3 flex flex-col shadow-sm">
-                                    <div className="flex justify-between mb-2 pb-1 border-b border-slate-50"><span className="text-[10px] font-black uppercase text-slate-400">1. Divisions</span><button type="button" onClick={() => setProjForm(prev => ({...prev, tempMapDivs: prev.tempMapDivs.length === prev.divisions.length ? [] : prev.divisions}))} className="text-[9px] text-indigo-600 font-bold hover:bg-indigo-50 px-2 rounded">ALL</button></div>
+                                <div className="bg-white border border-indigo-100 rounded-2xl p-3 flex flex-col shadow-sm h-full overflow-hidden">
+                                    <div className="flex justify-between mb-2 pb-1 border-b border-slate-50">
+                                        <span className="text-[10px] font-black uppercase text-slate-400">1. Divisions</span>
+                                        <button type="button" onClick={() => setProjForm(prev => ({...prev, tempMapDivs: prev.tempMapDivs.length === prev.divisions.length ? [] : prev.divisions}))} className="text-[9px] text-indigo-600 font-bold hover:bg-indigo-50 px-2 rounded">ALL</button>
+                                    </div>
                                     <div className="flex-1 overflow-y-auto custom-scrollbar space-y-1">
                                         {projForm.divisions.map(d => {
                                             const lockStatus = getItemLockStatus('div', d);
@@ -1052,8 +1078,11 @@ const pendingApprovalCount = state.groupAssignments.filter((ga: GroupAssignment)
                                     </div>
                                 </div>
                                 {/* 2. Part Selector */}
-                                <div className="bg-white border border-indigo-100 rounded-2xl p-3 flex flex-col shadow-sm">
-                                    <div className="flex justify-between mb-2 pb-1 border-b border-slate-50"><span className="text-[10px] font-black uppercase text-slate-400">2. Parts</span><button type="button" onClick={() => setProjForm(prev => ({...prev, tempMapParts: prev.tempMapParts.length === prev.partNos.length ? [] : prev.partNos}))} className="text-[9px] text-indigo-600 font-bold hover:bg-indigo-50 px-2 rounded">ALL</button></div>
+                                <div className="bg-white border border-indigo-100 rounded-2xl p-3 flex flex-col shadow-sm h-full overflow-hidden">
+                                    <div className="flex justify-between mb-2 pb-1 border-b border-slate-50">
+                                        <span className="text-[10px] font-black uppercase text-slate-400">2. Parts</span>
+                                        <button type="button" onClick={() => setProjForm(prev => ({...prev, tempMapParts: prev.tempMapParts.length === prev.partNos.length ? [] : prev.partNos}))} className="text-[9px] text-indigo-600 font-bold hover:bg-indigo-50 px-2 rounded">ALL</button>
+                                    </div>
                                     <div className="flex-1 overflow-y-auto custom-scrollbar space-y-1">
                                         {projForm.partNos.map(p => {
                                             const lockStatus = getItemLockStatus('part', p);
@@ -1064,8 +1093,11 @@ const pendingApprovalCount = state.groupAssignments.filter((ga: GroupAssignment)
                                     </div>
                                 </div>
                                 {/* 3. WT Selector */}
-                                <div className="bg-white border border-indigo-100 rounded-2xl p-3 flex flex-col shadow-sm">
-                                    <div className="flex justify-between mb-2 pb-1 border-b border-slate-50"><span className="text-[10px] font-black uppercase text-slate-400">3. Work Types</span><button type="button" onClick={() => setProjForm(prev => ({...prev, tempMapWTs: prev.tempMapWTs.length === prev.workTypes.length ? [] : prev.workTypes}))} className="text-[9px] text-indigo-600 font-bold hover:bg-indigo-50 px-2 rounded">ALL</button></div>
+                                <div className="bg-white border border-indigo-100 rounded-2xl p-3 flex flex-col shadow-sm h-full overflow-hidden">
+                                    <div className="flex justify-between mb-2 pb-1 border-b border-slate-50">
+                                        <span className="text-[10px] font-black uppercase text-slate-400">3. Work Types</span>
+                                        <button type="button" onClick={() => setProjForm(prev => ({...prev, tempMapWTs: prev.tempMapWTs.length === prev.workTypes.length ? [] : prev.workTypes}))} className="text-[9px] text-indigo-600 font-bold hover:bg-indigo-50 px-2 rounded">ALL</button>
+                                    </div>
                                     <div className="flex-1 overflow-y-auto custom-scrollbar space-y-1">
                                         {projForm.workTypes.map(w => {
                                             const lockStatus = getItemLockStatus('wt', w);
@@ -1321,6 +1353,7 @@ const pendingApprovalCount = state.groupAssignments.filter((ga: GroupAssignment)
                                                     const isSelected = isAllocSelected(s.division, p.name, wt);
                                                     const existingAssignment = state.groupAssignments.find((ga: GroupAssignment) =>
                                                         ga.projectId === selectedDeployProject.id &&
+                                                        ga.status !== 'REJECTED' &&
                                                         ga.scope.some((sc: ScopeItem) =>
                                                             sc.division === s.division &&
                                                             sc.parts.some((pt: any) => pt.name === p.name && pt.workTypes.includes(wt))
@@ -1499,6 +1532,47 @@ const pendingApprovalCount = state.groupAssignments.filter((ga: GroupAssignment)
             </div>
          </div>
       )}
+      {/* 🔴 REJECTION REVIEW MODAL (PM) */}
+        {viewRejection && (
+            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fadeIn">
+                <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6">
+                    <h3 className="text-lg font-black text-slate-900 mb-2">Review Rejection Request</h3>
+                    
+                    <div className="bg-red-50 p-4 rounded-xl border border-red-100 mb-6">
+                        <p className="text-[10px] font-bold text-red-400 uppercase mb-1">Reason from Team Lead</p>
+                        <p className="text-sm font-bold text-red-800 italic">
+                            "{viewRejection.rejectionReason || 'No reason provided.'}"
+                        </p>
+                    </div>
+
+                    <p className="text-xs text-slate-500 mb-6">
+                        Accepting this will mark the assignment as <span className="font-bold text-red-500">REJECTED</span>. These scope items will become available (white) in the deployment screen for re-assignment.
+                    </p>
+
+                    <div className="flex gap-3">
+                        <button 
+                            onClick={() => {
+                                // We append "Accepted by PM" to the history log in the DB if you like, or just keep original reason
+                                updateGroupAssignment(viewRejection.id, { 
+                                    status: 'REJECTED', 
+                                    rejectionReason: viewRejection.rejectionReason + " [Accepted by PM]" 
+                                });
+                                setViewRejection(null);
+                            }} 
+                            className="flex-1 bg-red-600 text-white py-3 rounded-xl font-black text-xs uppercase shadow-lg shadow-red-100 hover:bg-red-700"
+                        >
+                            Accept Rejection
+                        </button>
+                        <button 
+                            onClick={() => setViewRejection(null)} 
+                            className="flex-1 bg-slate-100 text-slate-500 py-3 rounded-xl font-black text-xs uppercase hover:bg-slate-200"
+                        >
+                            Cancel
+                        </button>
+                    </div>
+                </div>
+            </div>
+        )}
     </div>
   );
 };

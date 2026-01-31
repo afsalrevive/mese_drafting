@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import ExportToolbar from './ExportToolbar'; 
 
 // --- NEW: SIMPLE LINE CHART COMPONENT ---
@@ -272,7 +272,6 @@ const SearchableSelect = ({ options, value, onChange, placeholder = "Select..." 
     );
 };
 
-// --- REPORT GENERATOR VIEW (WITH EXPORT ADDED) ---
 export const ReportGenerator = ({ store, role }) => {
     // Helper: Local Date
     const getLocalDate = (d: Date) => {
@@ -291,28 +290,29 @@ export const ReportGenerator = ({ store, role }) => {
     
     const [data, setData] = useState<any[]>([]);
 
+    // 🟢 1. NEW STATE: SORT CONFIGURATION
+    const [sortConfig, setSortConfig] = useState<{ key: string | null; direction: 'asc' | 'desc' }>({ 
+        key: 'eta', 
+        direction: 'asc' 
+    });
+
     const generate = async () => {
         if(!filter.startDate || !filter.endDate) return alert("Select Date Range");
         try {
-            // PASS 'role' PROP TO STORE
             let res = await store.generateReport(filter, role);
             res = res || [];
 
-            // 2. FORCE FILTER (Fix: "Results not filtered")
-            // Even if backend ignores projectId, we filter it here client-side
+            // FORCE FILTER LOGIC
             if (filter.projectId) {
                 const selectedProj = store.state.projects.find((p: any) => String(p.id) === String(filter.projectId));
                 res = res.filter((r: any) => 
-                    // Check by ID if available, otherwise by Name match
                     (r.projectId && String(r.projectId) === String(filter.projectId)) || 
                     (r.projectName && r.projectName === selectedProj?.name)
                 );
             }
-            // Force Filter for Team (Double check)
             if (filter.teamId) {
                  res = res.filter((r: any) => r.teamId && String(r.teamId) === String(filter.teamId));
             }
-            // Force Filter for Member
             if (filter.memberId) {
                  res = res.filter((r: any) => r.memberId && String(r.memberId) === String(filter.memberId));
             }
@@ -322,6 +322,39 @@ export const ReportGenerator = ({ store, role }) => {
             console.error(e);
             setData([]);
         }
+    };
+
+    // 🟢 2. NEW LOGIC: SORT FUNCTION
+    const requestSort = (key: string) => {
+        let direction: 'asc' | 'desc' = 'asc';
+        if (sortConfig.key === key && sortConfig.direction === 'asc') {
+            direction = 'desc';
+        }
+        setSortConfig({ key, direction });
+    };
+
+    // 🟢 3. NEW LOGIC: MEMOIZED SORTED DATA
+    const sortedData = useMemo(() => {
+        let sortableItems = [...data];
+        if (sortConfig.key !== null) {
+            sortableItems.sort((a, b) => {
+                const valA = a[sortConfig.key!] || '';
+                const valB = b[sortConfig.key!] || '';
+
+                if (valA < valB) return sortConfig.direction === 'asc' ? -1 : 1;
+                if (valA > valB) return sortConfig.direction === 'asc' ? 1 : -1;
+                return 0;
+            });
+        }
+        return sortableItems;
+    }, [data, sortConfig]);
+
+    // 🟢 4. HELPER: SORT ICON
+    const getSortIcon = (name: string) => {
+        if (sortConfig.key !== name) return <i className="fas fa-sort text-slate-300 ml-1 text-[10px]"></i>;
+        return sortConfig.direction === 'asc' 
+            ? <i className="fas fa-sort-up text-indigo-600 ml-1"></i> 
+            : <i className="fas fa-sort-down text-indigo-600 ml-1"></i>;
     };
 
     const formatScope = (r: any) => {
@@ -338,18 +371,13 @@ export const ReportGenerator = ({ store, role }) => {
     };
 
     const getReportTitle = () => {
-        // 1. MEMBER CONTEXT: Show Member Name
         if (role === 'MEMBER') {
             return `Performance Report: ${store.state.currentUser?.name || 'Member'}`;
         }
-
-        // 2. TEAM LEAD CONTEXT: Show Team Name + Member Filter (if any)
         if (role === 'TEAM_LEAD') {
             const myTeamId = store.state.currentUser?.teamId;
             const myTeam = store.state.teams.find((t: any) => t.id === myTeamId);
             let title = `Team Report: ${myTeam?.name || 'My Team'}`;
-            
-            // NEW: Append Member Name if filtered
             if (filter.memberId) {
                 const member = store.state.users.find((u: any) => String(u.id) === String(filter.memberId));
                 title += ` | Member: ${member?.name || 'Unknown'}`;
@@ -357,33 +385,25 @@ export const ReportGenerator = ({ store, role }) => {
             return title;
         }
 
-        // 3. PM / ADMIN CONTEXT: Dynamic Heading based on all Filters
         let parts: string[] = [];
-
-        // Check Project Filter
         if (filter.projectId) {
             const proj = store.state.projects.find((p: any) => String(p.id) === String(filter.projectId));
             parts.push(`Project: ${proj?.name || 'Unknown'}`);
         } else {
             parts.push("All Projects");
         }
-
-        // Check Team Filter
         if (filter.teamId) {
             const team = store.state.teams.find((t: any) => String(t.id) === String(filter.teamId));
             parts.push(`Team: ${team?.name || 'Unknown'}`);
         }
-
-        // Check Member Filter
         if (filter.memberId) {
             const member = store.state.users.find((u: any) => String(u.id) === String(filter.memberId));
             parts.push(`Member: ${member?.name || 'Unknown'}`);
         }
-
         return parts.length > 0 ? parts.join(" | ") : "General Summary Report";
     };
 
-    const exportData = data.map(r => ({
+    const exportData = sortedData.map(r => ({
         ...r,
         scopeSummary: formatScope(r),
         status: r.status.replace('_', ' ')
@@ -403,7 +423,6 @@ export const ReportGenerator = ({ store, role }) => {
         { header: 'Blackmarks', key: 'blackmarksAwarded' }
     ];
 
-    // Prepare Options for Searchable Select
     const projectOptions = [
         { value: '', label: 'All Projects' },
         ...store.state.projects.map((p: any) => ({ value: p.id, label: p.name }))
@@ -418,7 +437,6 @@ export const ReportGenerator = ({ store, role }) => {
                     <div className="space-y-1"><label className="text-[10px] font-black uppercase text-slate-400">Start Date</label><input type="date" className="w-full border-2 border-slate-100 p-2.5 rounded-xl font-bold text-sm" value={filter.startDate} onChange={e=>setFilter({...filter, startDate:e.target.value})} /></div>
                     <div className="space-y-1"><label className="text-[10px] font-black uppercase text-slate-400">End Date</label><input type="date" className="w-full border-2 border-slate-100 p-2.5 rounded-xl font-bold text-sm" value={filter.endDate} onChange={e=>setFilter({...filter, endDate:e.target.value})} /></div>
                     
-                    {/* --- USE NEW SEARCHABLE SELECT FOR PROJECT --- */}
                     <div className="col-span-2 md:col-span-1">
                         <SearchableSelect 
                             placeholder="Filter Project"
@@ -427,7 +445,6 @@ export const ReportGenerator = ({ store, role }) => {
                             onChange={(val: any) => setFilter({...filter, projectId: val})}
                         />
                     </div>
-                    {/* ------------------------------------------- */}
 
                     {(role === 'PM' || role === 'ADMIN') && (
                         <div className="space-y-1">
@@ -449,16 +466,8 @@ export const ReportGenerator = ({ store, role }) => {
                             >
                                 <option value="">All Members</option>
                                 {store.state.users.filter((u: any) => {
-                                    // FIX: If user is a Team Lead, ONLY show members of their own team
-                                    if (role === 'TEAM_LEAD') {
-                                        return u.teamId === store.state.currentUser?.teamId;
-                                    }
-                                    
-                                    // Existing logic for PMs (Filter by the selected Team dropdown, if any)
-                                    if (filter.teamId) {
-                                        return u.teamId === parseInt(filter.teamId);
-                                    }
-                                    
+                                    if (role === 'TEAM_LEAD') return u.teamId === store.state.currentUser?.teamId;
+                                    if (filter.teamId) return u.teamId === parseInt(filter.teamId);
                                     return true;
                                 }).map((u: any) => (
                                     <option key={u.id} value={u.id}>{u.name}</option>
@@ -470,10 +479,10 @@ export const ReportGenerator = ({ store, role }) => {
                 </div>
             </div>
 
-            {data && data.length > 0 ? (
+            {sortedData && sortedData.length > 0 ? (
                 <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
                     <div className="bg-slate-50 px-6 py-4 border-b border-slate-100 flex flex-col md:flex-row justify-between items-center gap-4">
-                        <h4 className="font-black text-slate-600 uppercase text-xs tracking-wider">Results ({data.length})</h4>
+                        <h4 className="font-black text-slate-600 uppercase text-xs tracking-wider">Results ({sortedData.length})</h4>
                         <ExportToolbar 
                             data={exportData} 
                             fileName={`Report_${filter.startDate}`}
@@ -481,25 +490,41 @@ export const ReportGenerator = ({ store, role }) => {
                             columns={exportColumns}
                         />
                     </div>
-                    {/* ... table code ... */}
                     <div className="overflow-x-auto">
                         <table className="w-full text-left text-xs">
-                             {/* ... existing table header and body ... */}
+                             {/* 🟢 5. UPDATED TABLE HEADERS WITH CLICK EVENTS */}
                              <thead className="bg-white font-black uppercase text-slate-500 tracking-wider border-b">
                                 <tr>
-                                    <th className="p-4">Project</th>
-                                    <th className="p-4">Team</th>
-                                    <th className="p-4">Member</th>
+                                    <th onClick={() => requestSort('projectName')} className="p-4 cursor-pointer hover:bg-slate-50 transition-colors select-none">
+                                        Project {getSortIcon('projectName')}
+                                    </th>
+                                    <th onClick={() => requestSort('teamName')} className="p-4 cursor-pointer hover:bg-slate-50 transition-colors select-none">
+                                        Team {getSortIcon('teamName')}
+                                    </th>
+                                    <th onClick={() => requestSort('memberName')} className="p-4 cursor-pointer hover:bg-slate-50 transition-colors select-none">
+                                        Member {getSortIcon('memberName')}
+                                    </th>
                                     <th className="p-4">Work Scope</th>
-                                    <th className="p-4">Assigned</th>
-                                    <th className="p-4">ETA</th>
-                                    <th className="p-4">Completed</th>
-                                    <th className="p-4">Status</th>
-                                    <th className="p-4">Rating</th>
+                                    <th onClick={() => requestSort('assignedTime')} className="p-4 cursor-pointer hover:bg-slate-50 transition-colors select-none">
+                                        Assigned {getSortIcon('assignedTime')}
+                                    </th>
+                                    <th onClick={() => requestSort('eta')} className="p-4 cursor-pointer hover:bg-slate-50 transition-colors select-none">
+                                        ETA {getSortIcon('eta')}
+                                    </th>
+                                    <th onClick={() => requestSort('completionTime')} className="p-4 cursor-pointer hover:bg-slate-50 transition-colors select-none">
+                                        Completed {getSortIcon('completionTime')}
+                                    </th>
+                                    <th onClick={() => requestSort('status')} className="p-4 cursor-pointer hover:bg-slate-50 transition-colors select-none">
+                                        Status {getSortIcon('status')}
+                                    </th>
+                                    <th onClick={() => requestSort('rating')} className="p-4 cursor-pointer hover:bg-slate-50 transition-colors select-none">
+                                        Rating {getSortIcon('rating')}
+                                    </th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100">
-                                {data.map((r, i) => (
+                                {/* 🟢 6. USE SORTED DATA MAP */}
+                                {sortedData.map((r, i) => (
                                     <tr key={i} className="hover:bg-slate-50 transition-colors">
                                         <td className="p-4 font-bold text-slate-800">{r.projectName}</td>
                                         <td className="p-4 text-slate-600 font-bold">{r.teamName}</td>

@@ -708,31 +708,37 @@ module.exports = {
 
       return result;
   },
+  
   getReport: (role, userId, startDate, endDate, specificTeamId, specificMemberId) => {
-      let sql = `
-          SELECT p.name as projectName, t.name as teamName, u.name as memberName, ga.teamId, ma.* FROM memberAssignments ma 
-          JOIN groupAssignments ga ON ma.groupAssignmentId = ga.id 
-          JOIN projects p ON ga.projectId = p.id 
-          JOIN teams t ON ga.teamId = t.id 
-          JOIN users u ON ma.memberId = u.id 
-          WHERE ma.eta >= ? AND ma.eta <= ? 
-      `;
-      
-      const params = [startDate, endDate];
+    
+    const fullStartDate = startDate.includes('T') ? startDate : `${startDate}T00:00:00`;
+    const fullEndDate = endDate.includes('T') ? endDate : `${endDate}T23:59:59`;
 
-      if (role === 'TEAM_LEAD') {
-          const user = db.prepare("SELECT teamId FROM users WHERE id = ?").get(userId);
-          if(user && user.teamId) { sql += ` AND ga.teamId = ?`; params.push(user.teamId); }
-      } else if (role === 'MEMBER') {
-          sql += ` AND ma.memberId = ?`; params.push(userId);
-      } else {
-          if (specificTeamId) { sql += ` AND ga.teamId = ?`; params.push(specificTeamId); }
-      }
-      if (specificMemberId) { sql += ` AND ma.memberId = ?`; params.push(specificMemberId); }
-      
-      sql += ` ORDER BY ma.eta ASC`; // Ordered by ETA makes more sense here
-      return db.prepare(sql).all(...params).map(r => ({ ...r, scope: JSON.parse(r.scope||'[]') }));
-  },
+    let sql = `
+        SELECT p.name as projectName, t.name as teamName, u.name as memberName, ga.teamId, ma.* FROM memberAssignments ma 
+        JOIN groupAssignments ga ON ma.groupAssignmentId = ga.id 
+        JOIN projects p ON ga.projectId = p.id 
+        JOIN teams t ON ga.teamId = t.id 
+        JOIN users u ON ma.memberId = u.id 
+        WHERE ma.eta >= ? AND ma.eta <= ? 
+    `;
+
+    // Use the new full date strings in the parameters
+    const params = [fullStartDate, fullEndDate];
+
+    if (role === 'TEAM_LEAD') {
+        const user = db.prepare("SELECT teamId FROM users WHERE id = ?").get(userId);
+        if(user && user.teamId) { sql += ` AND ga.teamId = ?`; params.push(user.teamId); }
+    } else if (role === 'MEMBER') {
+        sql += ` AND ma.memberId = ?`; params.push(userId);
+    } else {
+        if (specificTeamId) { sql += ` AND ga.teamId = ?`; params.push(specificTeamId); }
+    }
+    if (specificMemberId) { sql += ` AND ma.memberId = ?`; params.push(specificMemberId); }
+    
+    sql += ` ORDER BY ma.eta ASC`;
+    return db.prepare(sql).all(...params).map(r => ({ ...r, scope: JSON.parse(r.scope||'[]') }));
+},
 
   getNotifications: (userId) => stmts.getNotifications.all(userId),
   markNotificationsRead: (userId) => { stmts.markRead.run(userId); return { success: true }; },

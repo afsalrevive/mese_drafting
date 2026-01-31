@@ -26,6 +26,7 @@ const TLDashboard: React.FC<TLDashboardProps> = ({ store, currentView }) => {
   const [reviewData, setReviewData] = useState<MemberAssignment | null>(null);
   const [viewScreenshot, setViewScreenshot] = useState<string | null>(null);
   const [zoomLevel, setZoomLevel] = useState(1);
+  const [viewRejection, setViewRejection] = useState<MemberAssignment | null>(null);
 
   // Forms
   const getLocalISO = () => { const now = new Date(); now.setMinutes(now.getMinutes() - now.getTimezoneOffset()); return now.toISOString().slice(0, 16); };
@@ -478,18 +479,16 @@ const pendingReviewCount = state.memberAssignments.filter((ma: MemberAssignment)
 
                                             {ma.status === 'REJECTION_REQ' && (
                                                 <>
+                                                    {/* 🟢 CHANGE: Open Modal instead of confirm() */}
                                                     <button 
-                                                        onClick={() => {
-                                                            if(confirm("Accept Rejection? This scope will become unallocated.")) {
-                                                                updateMemberAssignment(ma.id, { status: 'REJECTED' });
-                                                            }
-                                                        }} 
+                                                        onClick={() => setViewRejection(ma)} 
                                                         className="bg-red-500 text-white px-2 py-1 rounded text-[9px] font-bold hover:bg-red-600"
                                                     >
-                                                        Accept
+                                                        Review Rejection
                                                     </button>
+                                                    
                                                     <button 
-                                                        onClick={() => updateMemberAssignment(ma.id, { status: 'IN_PROGRESS', rejectionReason: ' ' })} 
+                                                        onClick={() => updateMemberAssignment(ma.id, { status: 'IN_PROGRESS', rejectionReason: null })} 
                                                         className="bg-white border border-slate-300 text-slate-500 px-2 py-1 rounded text-[9px] font-bold hover:bg-slate-50"
                                                     >
                                                         Revoke
@@ -527,6 +526,43 @@ const pendingReviewCount = state.memberAssignments.filter((ma: MemberAssignment)
              )}
          </div>
       </div>
+      {/* 🔴 REJECTION REVIEW MODAL (TL) */}
+        {viewRejection && (
+            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fadeIn">
+                <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6">
+                    <h3 className="text-lg font-black text-slate-900 mb-2">Review Rejection Request</h3>
+                    
+                    <div className="bg-red-50 p-4 rounded-xl border border-red-100 mb-6">
+                        <p className="text-[10px] font-bold text-red-400 uppercase mb-1">Reason from Member</p>
+                        <p className="text-sm font-bold text-red-800 italic">
+                            "{viewRejection.rejectionReason || 'No reason provided.'}"
+                        </p>
+                    </div>
+
+                    <p className="text-xs text-slate-500 mb-6">
+                        By accepting, this scope will be marked as <span className="font-bold text-red-500">REJECTED</span> and will become unallocated in your dashboard. You can then re-assign it to someone else.
+                    </p>
+
+                    <div className="flex gap-3">
+                        <button 
+                            onClick={() => {
+                                updateMemberAssignment(viewRejection.id, { status: 'REJECTED' });
+                                setViewRejection(null);
+                            }} 
+                            className="flex-1 bg-red-600 text-white py-3 rounded-xl font-black text-xs uppercase shadow-lg shadow-red-100 hover:bg-red-700"
+                        >
+                            Accept Rejection
+                        </button>
+                        <button 
+                            onClick={() => setViewRejection(null)} 
+                            className="flex-1 bg-slate-100 text-slate-500 py-3 rounded-xl font-black text-xs uppercase hover:bg-slate-200"
+                        >
+                            Cancel
+                        </button>
+                    </div>
+                </div>
+            </div>
+        )}
 
       {/* ALLOC MODAL */}
       {showAlloc && (
