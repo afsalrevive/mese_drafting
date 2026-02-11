@@ -274,19 +274,20 @@ app.get('/api/chat', requireAuth, (req, res) => {
     res.json(db.getChatMessages());
 });
 
-app.post('/api/chat', requireAuth, uploadForum.single('image'), (req, res) => {
+app.post('/api/chat', requireAuth, uploadForum.any(), (req, res) => {
     // 1. Determine Content & Filename
     let content = req.body.message;
     let fileName = null;
     let isImage = req.body.isImage === 'true'; // Convert string 'true' to boolean
 
-    if (req.file) {
+    if (req.files && req.files.length > 0) {
+        const file = req.files[0];
         // If file exists, content becomes the path
-        content = '/uploads/forum/' + req.file.filename;
-        fileName = req.file.originalname; // Capture the original name (e.g., "Design.pdf")
+        content = '/uploads/forum/' + file.filename;
+        fileName = file.originalname; // Capture the original name (e.g., "Design.pdf")
         
         // Auto-detect image type from mimetype if not specified
-        if (req.file.mimetype.startsWith('image/')) {
+        if (file.mimetype.startsWith('image/')) {
             isImage = true;
         }
     }
@@ -308,15 +309,16 @@ app.get('/api/forum', requireAuth, (req, res) => {
     res.json(db.getThreads());
 });
 
-app.post('/api/forum', requireAuth, uploadForum.single('image'), (req, res) => {
+app.post('/api/forum', requireAuth, uploadForum.any(), (req, res) => {
     let content = req.body.content;
     let fileName = null;
     let isImage = req.body.isImage === 'true';
 
-    if (req.file) {
-        content = '/uploads/forum/' + req.file.filename;
-        fileName = req.file.originalname;
-        if (req.file.mimetype.startsWith('image/')) isImage = true;
+    if (req.files && req.files.length > 0) {
+        const file = req.files[0];
+        content = '/uploads/forum/' + file.filename;
+        fileName = file.originalname;
+        if (file.mimetype.startsWith('image/')) isImage = true;
     }
     
     res.json(db.createThread(
@@ -329,15 +331,16 @@ app.post('/api/forum', requireAuth, uploadForum.single('image'), (req, res) => {
     ));
 });
 
-app.post('/api/forum/comment', requireAuth, uploadForum.single('image'), (req, res) => {
+app.post('/api/forum/comment', requireAuth, uploadForum.any(), (req, res) => {
     let content = req.body.content;
     let fileName = null;
     let isImage = req.body.isImage === 'true';
 
-    if (req.file) {
-        content = '/uploads/forum/' + req.file.filename;
-        fileName = req.file.originalname;
-        if (req.file.mimetype.startsWith('image/')) isImage = true;
+    if (req.files && req.files.length > 0) {
+        const file = req.files[0];
+        content = '/uploads/forum/' + file.filename;
+        fileName = file.originalname;
+        if (file.mimetype.startsWith('image/')) isImage = true;
     }
     
     res.json(db.createComment(

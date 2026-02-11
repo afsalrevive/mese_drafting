@@ -264,8 +264,8 @@ const CommunicationHub = ({ store }: any) => {
                         {canTypeInChat ? (
                             <form onSubmit={handleChatSubmit} className="flex gap-2">
                                 <label className="flex items-center justify-center w-10 h-10 bg-slate-100 rounded-xl text-slate-400 cursor-pointer hover:bg-indigo-50 hover:text-indigo-600 transition-colors">
-                                    <i className="fas fa-image"></i>
-                                    <input type="file" className="hidden" accept="image/png, image/jpeg, image/jpg" onChange={(e) => handleFileUpload(e, 'CHAT')} />
+                                    <i className="fas fa-paperclip"></i>
+                                    <input type="file" className="hidden" accept="image/png, image/jpeg, image/jpg, application/pdf" onChange={(e) => handleFileUpload(e, 'CHAT')} />
                                 </label>
                                 <input 
                                     className="flex-grow bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all" 
@@ -360,8 +360,8 @@ const CommunicationHub = ({ store }: any) => {
 
                             <div className="p-3 bg-white border-t flex gap-2 items-center">
                                 <label className="text-slate-400 hover:text-indigo-600 cursor-pointer p-2">
-                                    <i className="fas fa-image"></i>
-                                    <input type="file" className="hidden" accept="image/png, image/jpeg" onChange={(e) => handleFileUpload(e, 'FORUM')} />
+                                    <i className="fas fa-paperclip"></i>
+                                    <input type="file" className="hidden" accept="image/png, image/jpeg, application/pdf" onChange={(e) => handleFileUpload(e, 'FORUM')} />
                                 </label>
                                 <input 
                                     className="flex-grow bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 text-sm outline-none focus:border-indigo-500" 
@@ -393,10 +393,10 @@ const CommunicationHub = ({ store }: any) => {
                                             <textarea className="w-full border rounded-lg px-4 py-2 text-sm" placeholder="What is this about?" rows={2} value={newThread.content} onChange={e=>setNewThread({...newThread, content:e.target.value})} />
                                             
                                             <div className="flex items-center gap-2">
-                                                <label className="text-xs font-bold text-slate-500">Attachment (Image):</label>
+                                                <label className="text-xs font-bold text-slate-500">Attachment (Image or PDF):</label>
                                                 <input 
                                                     type="file" 
-                                                    accept="image/png, image/jpeg"
+                                                    accept="image/png, image/jpeg, application/pdf"
                                                     className="text-xs text-slate-500 file:mr-2 file:py-1 file:px-2 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100"
                                                     onChange={(e) => setNewThreadFile(e.target.files?.[0] || null)}
                                                 />

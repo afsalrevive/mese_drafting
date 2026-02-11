@@ -322,19 +322,26 @@ export const useStore = () => {
   const uploadChatImage = async (file: File, channel: string, currentUser: any) => {
       if (!token) throw new Error('Authentication Error: Token missing.');
       
-      const validTypes = ['image/jpeg', 'image/png', 'image/jpg'];
+      const validImageTypes = ['image/jpeg', 'image/png', 'image/jpg'];
+      const validPdfTypes = ['application/pdf'];
+      const validTypes = [...validImageTypes, ...validPdfTypes];
+      
       if (!validTypes.includes(file.type)) {
-          throw new Error('Only JPEG and PNG images are allowed.');
+          throw new Error('Only JPEG, PNG images, and PDF files are allowed.');
       }
 
+      const isImage = validImageTypes.includes(file.type);
+      const isPdf = validPdfTypes.includes(file.type);
+
       const formData = new FormData();
-      formData.append('image', file);
+      formData.append(isImage ? 'image' : 'file', file);
       formData.append('senderId', currentUser.id);
       formData.append('senderName', currentUser.name);
       formData.append('senderRole', currentUser.roles.includes('PROJECT_MANAGER') || currentUser.roles.includes('ADMIN') ? 'PM' : 'MEMBER');
       formData.append('channel', channel);
-      formData.append('isImage', 'true');
-      formData.append('message', file.name);
+      formData.append('isImage', isImage ? 'true' : 'false');
+      formData.append('fileName', isPdf ? file.name : '');
+      formData.append('message', isImage ? file.name : file.name);
 
       const res = await fetch(`${API_BASE}/chat`, { 
           method: 'POST', 
@@ -342,25 +349,32 @@ export const useStore = () => {
           body: formData 
       });
 
-      if (!res.ok) throw new Error('Failed to upload chat image');
+      if (!res.ok) throw new Error('Failed to upload file');
       await fetchChat();
   };
 
   const uploadForumThreadImage = async (file: File, title: string, content: string, currentUser: any) => {
       if (!token) throw new Error('Authentication Error: Token missing.');
       
-      const validTypes = ['image/jpeg', 'image/png', 'image/jpg'];
+      const validImageTypes = ['image/jpeg', 'image/png', 'image/jpg'];
+      const validPdfTypes = ['application/pdf'];
+      const validTypes = [...validImageTypes, ...validPdfTypes];
+      
       if (!validTypes.includes(file.type)) {
-          throw new Error('Only JPEG and PNG images are allowed.');
+          throw new Error('Only JPEG, PNG images, and PDF files are allowed.');
       }
 
+      const isImage = validImageTypes.includes(file.type);
+      const isPdf = validPdfTypes.includes(file.type);
+
       const formData = new FormData();
-      formData.append('image', file);
+      formData.append(isImage ? 'image' : 'file', file);
       formData.append('authorId', currentUser.id);
       formData.append('authorName', currentUser.name);
       formData.append('title', title);
-      formData.append('content', file.name);
-      formData.append('isImage', 'true');
+      formData.append('content', isImage ? file.name : file.name);
+      formData.append('isImage', isImage ? 'true' : 'false');
+      formData.append('fileName', isPdf ? file.name : '');
 
       const res = await fetch(`${API_BASE}/forum`, { 
           method: 'POST', 
@@ -375,18 +389,25 @@ export const useStore = () => {
   const uploadForumCommentImage = async (file: File, threadId: number, currentUser: any) => {
       if (!token) throw new Error('Authentication Error: Token missing.');
       
-      const validTypes = ['image/jpeg', 'image/png', 'image/jpg'];
+      const validImageTypes = ['image/jpeg', 'image/png', 'image/jpg'];
+      const validPdfTypes = ['application/pdf'];
+      const validTypes = [...validImageTypes, ...validPdfTypes];
+      
       if (!validTypes.includes(file.type)) {
-          throw new Error('Only JPEG and PNG images are allowed.');
+          throw new Error('Only JPEG, PNG images, and PDF files are allowed.');
       }
 
+      const isImage = validImageTypes.includes(file.type);
+      const isPdf = validPdfTypes.includes(file.type);
+
       const formData = new FormData();
-      formData.append('image', file);
+      formData.append(isImage ? 'image' : 'file', file);
       formData.append('threadId', threadId.toString());
       formData.append('authorId', currentUser.id.toString());
       formData.append('authorName', currentUser.name);
       formData.append('content', file.name);
-      formData.append('isImage', 'true');
+      formData.append('isImage', isImage ? 'true' : 'false');
+      formData.append('fileName', isPdf ? file.name : '');
 
       const res = await fetch(`${API_BASE}/forum/comment`, { 
           method: 'POST', 
@@ -394,7 +415,7 @@ export const useStore = () => {
           body: formData 
       });
 
-      if (!res.ok) throw new Error('Failed to upload comment image');
+      if (!res.ok) throw new Error('Failed to upload comment file');
       await fetchForum();
   };
 
